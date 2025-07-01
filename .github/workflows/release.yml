@@ -1,0 +1,174 @@
+name: Cross-platform Build
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        target: 
+          - x86_64-pc-windows-msvc
+          - aarch64-pc-windows-msvc
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+    
+    - name: Build
+      run: cargo build --release --target ${{ matrix.target }}
+    
+    - name: Prepare artifact
+      run: |
+        mkdir artifacts
+        $arch = "${{ matrix.target }}".Split('-')[0]
+        copy "target\${{ matrix.target }}\release\mikusays.exe" "artifacts\mikusays-windows-$arch.exe"
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: mikusays-windows-${{ matrix.target }}
+        path: artifacts\*
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            arch: x64
+          - target: aarch64-unknown-linux-gnu  
+            arch: arm64
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+    
+    - name: Install cross-compilation tools
+      if: matrix.target == 'aarch64-unknown-linux-gnu'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-aarch64-linux-gnu
+        echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+    
+    - name: Build
+      run: cargo build --release --target ${{ matrix.target }}
+    
+    - name: Strip binary
+      run: |
+        if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
+          aarch64-linux-gnu-strip target/${{ matrix.target }}/release/mikusays
+        else
+          strip target/${{ matrix.target }}/release/mikusays
+        fi
+    
+    - name: Prepare artifact
+      run: |
+        mkdir -p artifacts
+        cp target/${{ matrix.target }}/release/mikusays artifacts/mikusays-linux-${{ matrix.arch }}
+        chmod +x artifacts/mikusays-linux-${{ matrix.arch }}
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: mikusays-linux-${{ matrix.arch }}
+        path: artifacts/*
+
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            arch: x64
+          - target: aarch64-apple-darwin
+            arch: arm64
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+    
+    - name: Build
+      run: cargo build --release --target ${{ matrix.target }}
+    
+    - name: Strip binary
+      run: strip target/${{ matrix.target }}/release/mikusays
+    
+    - name: Prepare artifact
+      run: |
+        mkdir -p artifacts
+        cp target/${{ matrix.target }}/release/mikusays artifacts/mikusays-macos-${{ matrix.arch }}
+        chmod +x artifacts/mikusays-macos-${{ matrix.arch }}
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: mikusays-macos-${{ matrix.arch }}
+        path: artifacts/*
+
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-linux, build-macos]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+        merge-multiple: true
+    
+    - name: Display structure of downloaded files
+      run: ls -R artifacts
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: artifacts/*
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+        body: |
+          ## Downloads
+          
+          ### Windows
+          - **x64**: `mikusays-windows-x86_64.exe`
+          - **ARM64**: `mikusays-windows-aarch64.exe`
+          
+          ### Linux
+          - **x64**: `mikusays-linux-x64`
+          - **ARM64**: `mikusays-linux-arm64`
+          
+          ### macOS
+          - **Intel (x64)**: `mikusays-macos-x64`
+          - **Apple Silicon (ARM64)**: `mikusays-macos-arm64`
+          
+          ## Usage
+          ```bash
+          # Download the appropriate binary for your platform
+          # On Unix-like systems, make it executable:
+          chmod +x mikusays-*
+          
+          # Run the program:
+          ./mikusays-* "Hello, World!"
+          ```
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

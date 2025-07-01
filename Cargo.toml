@@ -1,0 +1,9 @@
+[package]
+name = "mikusays"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+crossterm = "0.27"
+unicode-width = "0.1"
+rand = "0.8"

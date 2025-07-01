@@ -336,7 +336,7 @@ fn draw_miku_says(text: &str) -> Result<(), Box<dyn std::error::Error>> {
     if all_lines.len() >= window_height as usize {
         let horizontal_padding = " ".repeat(left);
         for line in &all_lines {
-            println!("{}{}", horizontal_padding, line);
+            println!("{horizontal_padding}{line}");
         }
         execute!(stdout, Show)?;
         return Ok(());
@@ -370,19 +370,15 @@ fn get_speech_bubble_lines(text: &str) -> Vec<String> {
     let max_width = lines.iter().map(|line| line.width()).max().unwrap_or(0);
     let mut bubble_lines = Vec::new();
 
-    let pointer_pos = 3;
+    let pointer_pos: usize = 3;
     let bubble_content_width = max_width + 4;
     let bubble_center = bubble_content_width / 2;
 
-    let bubble_start_offset = if pointer_pos >= bubble_center {
-        pointer_pos - bubble_center
-    } else {
-        0
-    };
+    let bubble_start_offset = pointer_pos.saturating_sub(bubble_center);
 
     let padding = " ".repeat(bubble_start_offset);
 
-    bubble_lines.push(format!("{} {}", padding, "_".repeat(max_width + 2)));
+    bubble_lines.push(format!("{padding} {}", "_".repeat(max_width + 2)));
 
     for (i, line) in lines.iter().enumerate() {
         let (left_border, right_border) = if lines.len() == 1 {
@@ -396,16 +392,11 @@ fn get_speech_bubble_lines(text: &str) -> Vec<String> {
         };
 
         bubble_lines.push(format!(
-            "{}{} {:<width$} {}",
-            padding,
-            left_border,
-            line,
-            right_border,
-            width = max_width
+            "{padding}{left_border} {line:<max_width$} {right_border}"
         ));
     }
 
-    bubble_lines.push(format!("{} {}", padding, "‾".repeat(max_width + 2)));
+    bubble_lines.push(format!("{padding} {}", "‾".repeat(max_width + 2)));
 
     bubble_lines.push("   \\".to_string());
     bubble_lines.push("    \\".to_string());
@@ -422,7 +413,7 @@ fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
         let word_width = word.width();
         let current_width = current_line.width();
 
-        if current_width + word_width + 1 <= max_width {
+        if current_width + word_width < max_width {
             if !current_line.is_empty() {
                 current_line.push(' ');
             }

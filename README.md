@@ -1,6 +1,13 @@
+<div align=center>
+
 # MikuSays 🎤
 
-A `cowsay` clone with Hatsune Miku ASCII art and speech bubbles.
+A `cowsay` clone with Hatsune Miku ASCII art and speech bubbles.  
+
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/xxanqw/mikusays?style=for-the-badge)](https://github.com/xxanqw/mikusays/releases/latest)
+[![AUR Package Version](https://img.shields.io/aur/version/mikusays?style=for-the-badge)](https://aur.archlinux.org/packages/mikusays)
+
+</div>
 
 ## Usage
 

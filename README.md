@@ -10,6 +10,12 @@ mikusays "Hello, World!"
 
 ## Installation
 
+### Arch Linux
+```bash
+yay -S mikusays
+paru -S mikusays
+```
+
 Download from [Releases](https://github.com/YOUR_USERNAME/mikusays/releases):
 
 - **Windows**: `mikusays-windows-*.exe`

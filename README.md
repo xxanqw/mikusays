@@ -23,7 +23,7 @@ yay -S mikusays
 paru -S mikusays
 ```
 
-Download from [Releases](https://github.com/YOUR_USERNAME/mikusays/releases):
+Download from [Releases](https://github.com/xxanqw/mikusays/releases):
 
 - **Windows**: `mikusays-windows-*.exe`
 - **Linux**: `mikusays-linux-*` 

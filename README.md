@@ -23,6 +23,12 @@ yay -S mikusays
 paru -S mikusays
 ```
 
+### macOS (or Linux if using Homebrew)
+```bash
+brew tap xxanqw/mikusays
+brew install mikusays
+```
+
 Download from [Releases](https://github.com/xxanqw/mikusays/releases):
 
 - **Windows**: `mikusays-windows-*.exe`

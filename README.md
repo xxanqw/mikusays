@@ -29,6 +29,13 @@ brew tap xxanqw/mikusays
 brew install mikusays
 ```
 
+### Windows (using Scoop)
+```bash
+scoop bucket add xxanqw-bucket https://github.com/xxanqw/scoop-bucket
+scoop update
+scoop install mikusays
+```
+
 Download from [Releases](https://github.com/xxanqw/mikusays/releases):
 
 - **Windows**: `mikusays-windows-*.exe`

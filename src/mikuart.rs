@@ -4,7 +4,7 @@
 use rand::Rng;
 
 pub fn get_miku_art() -> Vec<&'static str> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let styles = vec![
         //MARK: small art
         vec![
@@ -504,6 +504,6 @@ pub fn get_miku_art() -> Vec<&'static str> {
         ],
     ];
 
-    let selected_style = rng.gen_range(0..styles.len());
+    let selected_style = rng.random_range(0..styles.len());
     styles[selected_style].clone()
 }

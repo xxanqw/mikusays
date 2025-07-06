@@ -26,12 +26,13 @@ fn draw_miku_says(text: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     let (window_width, window_height) = size()?;
     let available_width = window_width as usize;
-    
+
     let mut all_content_lines = Vec::new();
     all_content_lines.extend(speech_bubble_lines.clone());
     all_content_lines.extend(miku_art.iter().map(|s| s.to_string()));
-    
-    let max_content_width = all_content_lines.iter()
+
+    let max_content_width = all_content_lines
+        .iter()
         .map(|l| l.width())
         .max()
         .unwrap_or(0);
@@ -42,25 +43,27 @@ fn draw_miku_says(text: &str) -> Result<(), Box<dyn std::error::Error>> {
         0
     };
 
-    let bubble_width = speech_bubble_lines.first()
+    let bubble_width = speech_bubble_lines
+        .first()
         .map(|line| line.width())
         .unwrap_or(0);
-    
+
     let first_miku_line = miku_art.first().unwrap_or(&"");
-    let tail_pos = first_miku_line.chars()
+    let tail_pos = first_miku_line
+        .chars()
         .position(|c| !c.is_whitespace())
         .unwrap_or(0);
-    
+
     let bubble_center = bubble_width / 2;
     let miku_tail_absolute_pos = overall_left_padding + tail_pos;
-    
+
     let bubble_left_padding = miku_tail_absolute_pos.saturating_sub(bubble_center);
 
     let bubble_line_count = speech_bubble_lines.len();
 
     let content_height = all_content_lines.len();
     let available_height = window_height as usize;
-    
+
     let top_padding = if content_height < available_height {
         (available_height - content_height) / 2
     } else {
@@ -73,8 +76,9 @@ fn draw_miku_says(text: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     for (i, line) in all_content_lines.iter().enumerate() {
         let is_bubble_line = i < bubble_line_count;
-        let is_tail_line = is_bubble_line && (i == bubble_line_count - 2 || i == bubble_line_count - 1);
-        
+        let is_tail_line =
+            is_bubble_line && (i == bubble_line_count - 2 || i == bubble_line_count - 1);
+
         if is_bubble_line {
             if is_tail_line {
                 let tail_padding = overall_left_padding + tail_pos;
@@ -100,16 +104,17 @@ fn draw_miku_says(text: &str) -> Result<(), Box<dyn std::error::Error>> {
 fn get_speech_bubble_lines(text: &str) -> Vec<String> {
     const MAX_BUBBLE_WIDTH: usize = 50;
     const MIN_BUBBLE_WIDTH: usize = 20;
-    
+
     let temp_lines = wrap_text(text, MAX_BUBBLE_WIDTH - 4);
-    
-    let content_width = temp_lines.iter()
+
+    let content_width = temp_lines
+        .iter()
         .map(|line| line.width())
         .max()
         .unwrap_or(0);
-    
+
     let bubble_width = (content_width + 4).clamp(MIN_BUBBLE_WIDTH, MAX_BUBBLE_WIDTH);
-    
+
     let lines = wrap_text(text, bubble_width - 4);
     let mut bubble_lines = Vec::new();
 
@@ -132,7 +137,7 @@ fn get_speech_bubble_lines(text: &str) -> Vec<String> {
         let padding_needed = (bubble_width - 2).saturating_sub(line_display_width);
         let left_padding = padding_needed / 2;
         let right_padding = padding_needed - left_padding;
-        
+
         bubble_lines.push(format!(
             "{} {}{}{} {}",
             vertical,

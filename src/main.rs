@@ -54,11 +54,7 @@ fn draw_miku_says(text: &str) -> Result<(), Box<dyn std::error::Error>> {
     let bubble_center = bubble_width / 2;
     let miku_tail_absolute_pos = overall_left_padding + tail_pos;
     
-    let bubble_left_padding = if miku_tail_absolute_pos >= bubble_center {
-        miku_tail_absolute_pos - bubble_center
-    } else {
-        0
-    };
+    let bubble_left_padding = miku_tail_absolute_pos.saturating_sub(bubble_center);
 
     let bubble_line_count = speech_bubble_lines.len();
 
@@ -112,9 +108,7 @@ fn get_speech_bubble_lines(text: &str) -> Vec<String> {
         .max()
         .unwrap_or(0);
     
-    let bubble_width = (content_width + 4)
-        .max(MIN_BUBBLE_WIDTH)
-        .min(MAX_BUBBLE_WIDTH);
+    let bubble_width = (content_width + 4).clamp(MIN_BUBBLE_WIDTH, MAX_BUBBLE_WIDTH);
     
     let lines = wrap_text(text, bubble_width - 4);
     let mut bubble_lines = Vec::new();

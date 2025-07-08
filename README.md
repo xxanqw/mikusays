@@ -1,5 +1,7 @@
 <div align=center>
 
+<img width=500px src="https://github.com/user-attachments/assets/d08929ed-85c6-42c5-8858-b46753d34205">
+
 # MikuSays 🎤
 
 A `cowsay` clone with Hatsune Miku ASCII art and speech bubbles.  
@@ -39,6 +41,8 @@ scoop install mikusays
 Download from [Releases](https://github.com/xxanqw/mikusays/releases):
 
 - **Windows**: `mikusays-windows-*.exe`
+    - Small note for Windows that application depends on `vcredist2022`  
+      (installing with scoop will resolve this dependency automatically)
 - **Linux**: `mikusays-linux-*` 
 - **macOS**: `mikusays-macos-*`
 

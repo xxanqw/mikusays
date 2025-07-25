@@ -3,7 +3,7 @@
 
 use rand::Rng;
 
-pub fn get_miku_art() -> Vec<&'static str> {
+pub fn get_miku_art(style: i32) -> Vec<&'static str> {
     let mut rng = rand::rng();
     let styles = vec![
         //MARK: small art
@@ -504,6 +504,6 @@ pub fn get_miku_art() -> Vec<&'static str> {
         ],
     ];
 
-    let selected_style = rng.random_range(0..styles.len());
+    let selected_style = if style < 0 { rng.random_range(0..styles.len()) } else { style as usize };
     styles[selected_style].clone()
 }

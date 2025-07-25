@@ -12,20 +12,27 @@ struct Args {
     /// Text to display in the speech bubble
     text: String,
 
+    /// Style of the Miku art. Random is chosen if not specified.
+    #[arg(short, long)]
+    style: Option<i32>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     
     let text = args.text;
-    draw_miku_says(&text)?;
+    let style = match args.style {
+        Some(s) => s,
+        None => -1 // Default to -1 to select a random style
+    };
+    draw_miku_says(&text, style)?;
 
     Ok(())
 }
 
-fn draw_miku_says(text: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn draw_miku_says(text: &str, style: i32) -> Result<(), Box<dyn std::error::Error>> {
     let speech_bubble_lines = get_speech_bubble_lines(text);
-    let miku_art = get_miku_art();
+    let miku_art = get_miku_art(style);
 
     let (window_width, window_height) = size()?;
     let available_width = window_width as usize;

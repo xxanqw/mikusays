@@ -1,20 +1,23 @@
 use crossterm::terminal::size;
 use std::env;
 use unicode_width::UnicodeWidthStr;
+use clap::Parser;
 
 mod mikuart;
 use mikuart::get_miku_art;
 
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Text to display in the speech bubble
+    text: String,
+
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() == 1 {
-        println!("Usage: mikusays <text>");
-        println!("Example: mikusays \"Hello, World!\"");
-        return Ok(());
-    }
-
-    let text = args[1..].join(" ");
+    let args = Args::parse();
+    
+    let text = args.text;
     draw_miku_says(&text)?;
 
     Ok(())

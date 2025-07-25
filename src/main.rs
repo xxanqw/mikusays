@@ -1,7 +1,7 @@
+use clap::Parser;
 use crossterm::terminal::size;
 use std::env;
 use unicode_width::UnicodeWidthStr;
-use clap::Parser;
 
 mod mikuart;
 use mikuart::get_miku_art;
@@ -19,11 +19,11 @@ struct Args {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    
+
     let text = args.text;
     let style = match args.style {
         Some(s) => s,
-        None => -1 // Default to -1 to select a random style
+        None => -1, // Default to -1 to select a random style
     };
     draw_miku_says(&text, style)?;
 

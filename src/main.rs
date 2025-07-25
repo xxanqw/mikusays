@@ -11,7 +11,7 @@ struct Args {
     /// Text to display in the speech bubble
     text: String,
 
-    /// Style of the Miku art. Random is chosen if not specified.
+    /// Style of the Miku art. A random one is chosen if not specified
     #[arg(short, long)]
     style: Option<i32>,
 }

@@ -14,7 +14,9 @@ A `cowsay` clone with Hatsune Miku ASCII art and speech bubbles.
 ## Usage
 
 ```bash
-mikusays "Hello, World!"
+mikusays "Hello, World!" # Chooses random style
+
+mikusays "World is Mine!" --style 4
 ```
 
 ## Installation

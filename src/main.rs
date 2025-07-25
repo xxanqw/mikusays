@@ -1,28 +1,34 @@
+use clap::Parser;
 use crossterm::terminal::size;
-use std::env;
 use unicode_width::UnicodeWidthStr;
 
 mod mikuart;
 use mikuart::get_miku_art;
 
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Text to display in the speech bubble
+    text: String,
+
+    /// Style of the Miku art. A random one is chosen if not specified
+    #[arg(short, long)]
+    style: Option<i32>,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = env::args().collect();
+    let args = Args::parse();
 
-    if args.len() == 1 {
-        println!("Usage: mikusays <text>");
-        println!("Example: mikusays \"Hello, World!\"");
-        return Ok(());
-    }
-
-    let text = args[1..].join(" ");
-    draw_miku_says(&text)?;
+    let text = args.text;
+    let style = args.style.unwrap_or(-1); // Default to -1 to select a random style
+    draw_miku_says(&text, style)?;
 
     Ok(())
 }
 
-fn draw_miku_says(text: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn draw_miku_says(text: &str, style: i32) -> Result<(), Box<dyn std::error::Error>> {
     let speech_bubble_lines = get_speech_bubble_lines(text);
-    let miku_art = get_miku_art();
+    let miku_art = get_miku_art(style);
 
     let (window_width, window_height) = size()?;
     let available_width = window_width as usize;

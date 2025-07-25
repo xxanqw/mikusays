@@ -504,6 +504,9 @@ pub fn get_miku_art(style: i32) -> Vec<&'static str> {
         ],
     ];
 
+    if style > 0 && style as usize >= styles.len() {
+        panic!("Style {} does not exist! Chooese one below {}", style, styles.len());
+    }
     let selected_style = if style < 0 { rng.random_range(0..styles.len()) } else { style as usize };
     styles[selected_style].clone()
 }

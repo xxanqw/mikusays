@@ -1,9 +1,11 @@
 [package]
 name = "mikusays"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
+description = "A \"cowsay\" clone with Hatsune Miku ASCII art and speech bubbles."
 
 [dependencies]
 crossterm = "0.29"
 unicode-width = "0.2"
 rand = "0.9"
+clap = { version = "4.5.41", features = ["derive"] }

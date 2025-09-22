@@ -9,26 +9,58 @@ use mikuart::get_miku_art;
 #[command(version, about, long_about = None)]
 struct Args {
     /// Text to display in the speech bubble
-    text: String,
+    text: Option<String>,
 
     /// Style of the Miku art. A random one is chosen if not specified
     #[arg(short, long)]
     style: Option<i32>,
+
+    /// List all available art styles with their indices
+    #[arg(short, long)]
+    list: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let text = args.text;
+    if args.list {
+        list_all_art_styles();
+        return Ok(());
+    }
+
+    let text = args.text.unwrap_or_else(|| {
+        eprintln!("Error: Text is required when not using --list");
+        std::process::exit(1);
+    });
     let style = args.style.unwrap_or(-1); // Default to -1 to select a random style
     draw_miku_says(&text, style)?;
 
     Ok(())
 }
 
+fn list_all_art_styles() {
+    println!("Available Miku art styles:");
+    println!("==========================");
+
+    // Get all art styles to determine the count
+    let all_art = get_miku_art(None, Some(true));
+    let styles_count = all_art.len();
+    println!("Total styles: {}", styles_count);
+
+    for i in 0..styles_count {
+        println!("\n--- Style {} ---", i);
+        let art = get_miku_art(Some(i as i32), Some(false));
+        for line in art {
+            println!("{}", line);
+        }
+    }
+
+    println!("\nUse --style <number> to select a specific style, or omit for random selection.");
+}
+
 fn draw_miku_says(text: &str, style: i32) -> Result<(), Box<dyn std::error::Error>> {
     let speech_bubble_lines = get_speech_bubble_lines(text);
-    let miku_art = get_miku_art(style);
+    let miku_art = get_miku_art(Some(style), None);
 
     let (window_width, window_height) = size()?;
     let available_width = window_width as usize;

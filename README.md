@@ -28,6 +28,13 @@ mikusays --list # Display all available styles
 yay -S mikusays
 paru -S mikusays
 ```
+> [!NOTE]
+> On update 'cause of same linux file naming, you need to clear AUR cache before installing or hash will missmatch
+> ```bash
+> yay -Scc
+> paru -Scc
+> ```
+
 
 ### macOS (or Linux if using Homebrew)
 ```bash

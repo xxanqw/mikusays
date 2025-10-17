@@ -44,6 +44,7 @@ brew install mikusays
 
 ### Windows (using Scoop)
 ```bash
+scoop bucket add extras
 scoop bucket add xxanqw-bucket https://github.com/xxanqw/scoop-bucket
 scoop update
 scoop install mikusays

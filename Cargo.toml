@@ -3,6 +3,28 @@ name = "mikusays"
 version = "0.1.3"
 edition = "2024"
 description = "A \"cowsay\" clone with Hatsune Miku ASCII art and speech bubbles."
+license = "MIT"
+
+[package.metadata.deb]
+maintainer = "Ivan Potiienko <contact@xxanqw.pp.ua>"
+copyright = "2025, xxanqw <contact@xxanqw.pp.ua>"
+license-file = ["LICENSE", "4"]
+extended-description = """\
+A cowsay clone featuring Hatsune Miku ASCII art with speech bubbles. \
+Create fun terminal messages with various Miku styles."""
+depends = "$auto"
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/mikusays", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/mikusays/", "644"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/mikusays", dest = "/usr/bin/mikusays", mode = "755" },
+    { source = "README.md", dest = "/usr/share/doc/mikusays/README.md", mode = "644" },
+]
 
 [dependencies]
 crossterm = "0.29"

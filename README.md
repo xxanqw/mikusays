@@ -35,6 +35,8 @@ paru -S mikusays
 > paru -Scc
 > ```
 
+### Debian / Ubuntu / Fedora / RHEL / CentOS
+The repository and instructions available here: https://apt.xxanqw.pp.ua
 
 ### macOS (or Linux if using Homebrew)
 ```bash

@@ -1,0 +1,255 @@
+name: Windows Installer Packaging
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag (e.g., v1.0.0). Leave empty to use "latest".'
+        required: false
+        default: ''
+
+jobs:
+  package-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install NSIS
+        run: choco install nsis
+
+      - name: Get Version from Cargo.toml
+        id: get_version
+        shell: pwsh
+        run: |
+          # Extract version line from Cargo.toml
+          $VersionLine = Get-Content Cargo.toml | Select-String '^version\s*=\s*"(.*)"'
+          if ($VersionLine.Matches.Success) {
+            $Version = $VersionLine.Matches.Groups[1].Value
+            Write-Host "Found version in Cargo.toml: $Version"
+            "version=$Version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            Write-Error "Could not find version in Cargo.toml"
+            exit 1
+          }
+
+      - name: Determine Release Tag
+        id: get_tag
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          # 1. Try manual input
+          $TAG = "${{ inputs.tag_name }}"
+          
+          # 2. Try release event payload
+          if (-not $TAG) { $TAG = "${{ github.event.release.tag_name }}" }
+          
+          # 3. Fallback to latest release if still empty
+          if (-not $TAG) { 
+            Write-Host "No tag provided, fetching latest release..."
+            $TAG = $(gh release view --json tagName --jq .tagName) 
+          }
+          
+          if (-not $TAG) {
+            Write-Error "Could not determine release tag."
+            exit 1
+          }
+          
+          Write-Host "Using Tag for download: $TAG"
+          "tag=$TAG" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Download Release Assets
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          $TAG = "${{ steps.get_tag.outputs.tag }}"
+          gh release download $TAG -p "mikusays-windows-*.exe"
+
+      - name: Generate NSIS Script
+        shell: pwsh
+        run: |
+          $Version = "${{ steps.get_version.outputs.version }}"
+          $InstallerName = "mikusays-windows-inst-any-$Version.exe"
+          Write-Host "Installer will be named: $InstallerName"
+
+          # Prepend 0. to Cargo version for NSIS (e.g. "1.0.0" -> "0.1.0.0")
+          $NsisVersion = "0.$Version"
+          Write-Host "NSIS Internal Version: $NsisVersion"
+
+          $nsisContent = @'
+          !include "MUI2.nsh"
+          !include "LogicLib.nsh"
+          !include "x64.nsh"
+          !include "WinVer.nsh"
+
+          Name "Mikusays"
+          OutFile "__OUTFILE__"
+          Unicode True
+
+          ; --- Metadata & Versioning ---
+          VIProductVersion "__NSISVERSION__"
+          VIAddVersionKey "ProductName" "Mikusays"
+          VIAddVersionKey "CompanyName" "xxanqw"
+          VIAddVersionKey "LegalCopyright" "© xxanqw"
+          VIAddVersionKey "FileDescription" "Mikusays Installer"
+          VIAddVersionKey "FileVersion" "__VERSION__"
+          VIAddVersionKey "ProductVersion" "__VERSION__"
+
+          ; Install to AppData\Local\Programs\mikusays (User Context)
+          RequestExecutionLevel user
+          InstallDir "$LOCALAPPDATA\Programs\mikusays"
+
+          !define MUI_ABORTWARNING
+          !insertmacro MUI_PAGE_WELCOME
+          !insertmacro MUI_PAGE_INSTFILES
+          !insertmacro MUI_PAGE_FINISH
+          !insertmacro MUI_UNPAGE_CONFIRM
+          !insertmacro MUI_UNPAGE_INSTFILES
+          !insertmacro MUI_LANGUAGE "English"
+
+          Section "Install"
+              SetOutPath "$INSTDIR"
+              
+              ; Architecture Detection
+              ReadEnvStr $0 "PROCESSOR_ARCHITECTURE"
+              ${If} $0 == "ARM64"
+                  File "/oname=mikusays.exe" "mikusays-windows-aarch64.exe"
+              ${Else}
+                  File "/oname=mikusays.exe" "mikusays-windows-x86_64.exe"
+              ${EndIf}
+
+              WriteUninstaller "$INSTDIR\uninstall.exe"
+
+              ; Add to PATH (Simple Registry Append)
+              ReadRegStr $0 HKCU "Environment" "Path"
+              ${StrContains} $1 "$INSTDIR" "$0"
+              ${If} $1 == ""
+                  WriteRegExpandStr HKCU "Environment" "Path" "$0;$INSTDIR"
+                  SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
+              ${EndIf}
+          SectionEnd
+
+          Section "Uninstall"
+              Delete "$INSTDIR\mikusays.exe"
+              Delete "$INSTDIR\uninstall.exe"
+              RMDir "$INSTDIR"
+
+              ; Remove from PATH (Simple String Replacement)
+              ReadRegStr $0 HKCU "Environment" "Path"
+              ${StrRep} $0 "$0" ";$INSTDIR" "" 
+              ${StrRep} $0 "$0" "$INSTDIR;" "" 
+              ${StrRep} $0 "$0" "$INSTDIR" "" 
+              WriteRegExpandStr HKCU "Environment" "Path" "$0"
+              SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
+          SectionEnd
+
+          ; --- Helper Macros ---
+          !macro StrContains ResultVar Needle Haystack
+            Push "${Haystack}"
+            Push "${Needle}"
+            Call StrContains
+            Pop "${ResultVar}"
+          !macroend
+
+          Function StrContains
+            Exch $R1
+            Exch
+            Exch $R0
+            Push $R2
+            Push $R3
+            Push $R4
+            Push $R5
+            StrLen $R2 $R0
+            StrLen $R3 $R1
+            StrCpy $R5 ""
+            Loop:
+              StrCpy $R4 $R0 $R3
+              StrCmp $R4 $R1 Found
+              StrCpy $R0 $R0 "" 1
+              StrLen $R2 $R0
+              IntCmp $R2 $R3 Loop Loop End
+            Found:
+              StrCpy $R5 "1"
+            End:
+              Pop $R5
+              Pop $R4
+              Pop $R3
+              Pop $R2
+              Pop $R0
+              Pop $R1
+              Exch $R5
+          FunctionEnd
+
+          !macro StrRep ResultVar String SubString RepString
+            Push "${String}"
+            Push "${SubString}"
+            Push "${RepString}"
+            Call StrRep
+            Pop "${ResultVar}"
+          !macroend
+
+          Function StrRep
+            Exch $R2
+            Exch
+            Exch $R1
+            Exch
+            Exch $R0
+            Push $R3
+            Push $R4
+            Push $R5
+            Push $R6
+            Push $R7
+            StrCpy $R3 0
+            StrLen $R4 $R1
+            StrLen $R6 $R0
+            Start:
+              StrCpy $R5 $R0 $R4 $R3
+              StrCmp $R5 $R1 Found
+              IntOp $R3 $R3 + 1
+              IntCmp $R3 $R6 End End Start
+            Found:
+              StrCpy $R5 $R0 $R3
+              IntOp $R7 $R3 + $R4
+              StrCpy $R7 $R0 "" $R7
+              StrCpy $R0 "$R5$R2$R7"
+              StrLen $R6 $R0
+              IntOp $R3 $R3 + $R4
+              Goto Start
+            End:
+              Pop $R7
+              Pop $R6
+              Pop $R5
+              Pop $R4
+              Pop $R3
+              Pop $R2
+              Pop $R1
+              Exch $R0
+          FunctionEnd
+          
+          !define StrContains `!insertmacro StrContains`
+          !define StrRep `!insertmacro StrRep`
+          '@
+          
+          # Replace placeholders
+          $nsisContent = $nsisContent.Replace("__OUTFILE__", $InstallerName)
+          $nsisContent = $nsisContent.Replace("__NSISVERSION__", $NsisVersion)
+          $nsisContent = $nsisContent.Replace("__VERSION__", $Version)
+          
+          Set-Content -Path installer.nsi -Value $nsisContent
+
+      - name: Compile Installer
+        run: makensis installer.nsi
+
+      - name: Upload Installer to Release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          $TAG = "${{ steps.get_tag.outputs.tag }}"
+          $Version = "${{ steps.get_version.outputs.version }}"
+          $InstallerName = "mikusays-windows-inst-any-$Version.exe"
+          gh release upload $TAG $InstallerName --clobber

@@ -22,12 +22,10 @@ jobs:
       - name: Install NSIS
         run: choco install nsis
 
-
       - name: Get Version from Cargo.toml
         id: get_version
         shell: pwsh
         run: |
-          # Extract version line from Cargo.toml
           $VersionLine = Get-Content Cargo.toml | Select-String '^version\s*=\s*"(.*)"'
           if ($VersionLine.Matches.Success) {
             $Version = $VersionLine.Matches.Groups[1].Value
@@ -44,13 +42,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
-          # 1. Try manual input
           $TAG = "${{ inputs.tag_name }}"
-          
-          # 2. Try release event payload
           if (-not $TAG) { $TAG = "${{ github.event.release.tag_name }}" }
           
-          # 3. Fallback to latest release if still empty
           if (-not $TAG) { 
             Write-Host "No tag provided, fetching latest release..."
             $TAG = $(gh release view --json tagName --jq .tagName) 
@@ -61,7 +55,7 @@ jobs:
             exit 1
           }
           
-          Write-Host "Using Tag for download: $TAG"
+          Write-Host "Using Tag: $TAG"
           "tag=$TAG" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Download Release Assets
@@ -76,10 +70,11 @@ jobs:
         run: |
           $Version = "${{ steps.get_version.outputs.version }}"
           $InstallerName = "mikusays-windows-inst-any-$Version.exe"
-          Write-Host "Installer will be named: $InstallerName"
-
-          # Prepend 0. to Cargo version for NSIS (e.g. "1.0.0" -> "0.1.0.0")
+          
+          # Prepend 0. to create a 4-part version string (0.X.Y.Z)
           $NsisVersion = "0.$Version"
+          
+          Write-Host "Installer Name: $InstallerName"
           Write-Host "NSIS Internal Version: $NsisVersion"
 
           $nsisContent = @'
@@ -88,68 +83,7 @@ jobs:
           !include "x64.nsh"
           !include "WinVer.nsh"
 
-          Name "Mikusays"
-          OutFile "__OUTFILE__"
-          Unicode True
-
-          ; --- Metadata & Versioning ---
-          VIProductVersion "__NSISVERSION__"
-          VIAddVersionKey "ProductName" "Mikusays"
-          VIAddVersionKey "CompanyName" "xxanqw"
-          VIAddVersionKey "LegalCopyright" "© xxanqw"
-          VIAddVersionKey "FileDescription" "Mikusays Installer"
-          VIAddVersionKey "FileVersion" "__VERSION__"
-          VIAddVersionKey "ProductVersion" "__VERSION__"
-
-          ; Install to AppData\Local\Programs\mikusays (User Context)
-          RequestExecutionLevel user
-          InstallDir "$LOCALAPPDATA\Programs\mikusays"
-
-          !define MUI_ABORTWARNING
-          !insertmacro MUI_PAGE_WELCOME
-          !insertmacro MUI_PAGE_INSTFILES
-          !insertmacro MUI_PAGE_FINISH
-          !insertmacro MUI_UNPAGE_CONFIRM
-          !insertmacro MUI_UNPAGE_INSTFILES
-          !insertmacro MUI_LANGUAGE "English"
-
-          Section "Install"
-              SetOutPath "$INSTDIR"
-              
-              ; Architecture Detection
-              ReadEnvStr $0 "PROCESSOR_ARCHITECTURE"
-              ${If} $0 == "ARM64"
-                  File "/oname=mikusays.exe" "mikusays-windows-aarch64.exe"
-              ${Else}
-                  File "/oname=mikusays.exe" "mikusays-windows-x86_64.exe"
-              ${EndIf}
-
-              WriteUninstaller "$INSTDIR\uninstall.exe"
-
-              ; Add to PATH (Simple Registry Append)
-              ReadRegStr $0 HKCU "Environment" "Path"
-              ${StrContains} $1 "$INSTDIR" "$0"
-              ${If} $1 == ""
-                  WriteRegExpandStr HKCU "Environment" "Path" "$0;$INSTDIR"
-                  SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
-              ${EndIf}
-          SectionEnd
-
-          Section "Uninstall"
-              Delete "$INSTDIR\mikusays.exe"
-              Delete "$INSTDIR\uninstall.exe"
-              RMDir "$INSTDIR"
-
-              ; Remove from PATH (Simple String Replacement)
-              ReadRegStr $0 HKCU "Environment" "Path"
-              ${StrRep} $0 "$0" ";$INSTDIR" "" 
-              ${StrRep} $0 "$0" "$INSTDIR;" "" 
-              ${StrRep} $0 "$0" "$INSTDIR" "" 
-              WriteRegExpandStr HKCU "Environment" "Path" "$0"
-              SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
-          SectionEnd
-
-          ; --- Helper Macros ---
+          ; --- Helper Macros (MUST BE DEFINED BEFORE USE) ---
           !macro StrContains ResultVar Needle Haystack
             Push "${Haystack}"
             Push "${Needle}"
@@ -234,9 +168,70 @@ jobs:
           
           !define StrContains `!insertmacro StrContains`
           !define StrRep `!insertmacro StrRep`
+
+          ; --- Main Script ---
+          Name "Mikusays"
+          OutFile "__OUTFILE__"
+          Unicode True
+
+          ; --- Metadata & Versioning ---
+          VIProductVersion "__NSISVERSION__"
+          VIAddVersionKey "ProductName" "Mikusays"
+          VIAddVersionKey "CompanyName" "xxanqw"
+          VIAddVersionKey "LegalCopyright" "© xxanqw"
+          VIAddVersionKey "FileDescription" "Mikusays Installer"
+          VIAddVersionKey "FileVersion" "__VERSION__"
+          VIAddVersionKey "ProductVersion" "__VERSION__"
+
+          ; Install to AppData\Local\Programs\mikusays (User Context)
+          RequestExecutionLevel user
+          InstallDir "$LOCALAPPDATA\Programs\mikusays"
+
+          !define MUI_ABORTWARNING
+          !insertmacro MUI_PAGE_WELCOME
+          !insertmacro MUI_PAGE_INSTFILES
+          !insertmacro MUI_PAGE_FINISH
+          !insertmacro MUI_UNPAGE_CONFIRM
+          !insertmacro MUI_UNPAGE_INSTFILES
+          !insertmacro MUI_LANGUAGE "English"
+
+          Section "Install"
+              SetOutPath "$INSTDIR"
+              
+              ; Architecture Detection
+              ReadEnvStr $0 "PROCESSOR_ARCHITECTURE"
+              ${If} $0 == "ARM64"
+                  File "/oname=mikusays.exe" "mikusays-windows-aarch64.exe"
+              ${Else}
+                  File "/oname=mikusays.exe" "mikusays-windows-x86_64.exe"
+              ${EndIf}
+
+              WriteUninstaller "$INSTDIR\uninstall.exe"
+
+              ; Add to PATH (Simple Registry Append)
+              ReadRegStr $0 HKCU "Environment" "Path"
+              ${StrContains} $1 "$INSTDIR" "$0"
+              ${If} $1 == ""
+                  WriteRegExpandStr HKCU "Environment" "Path" "$0;$INSTDIR"
+                  SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
+              ${EndIf}
+          SectionEnd
+
+          Section "Uninstall"
+              Delete "$INSTDIR\mikusays.exe"
+              Delete "$INSTDIR\uninstall.exe"
+              RMDir "$INSTDIR"
+
+              ; Remove from PATH (Simple String Replacement)
+              ReadRegStr $0 HKCU "Environment" "Path"
+              ${StrRep} $0 "$0" ";$INSTDIR" "" 
+              ${StrRep} $0 "$0" "$INSTDIR;" "" 
+              ${StrRep} $0 "$0" "$INSTDIR" "" 
+              WriteRegExpandStr HKCU "Environment" "Path" "$0"
+              SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
+          SectionEnd
           '@
           
-          # Replace placeholders
           $nsisContent = $nsisContent.Replace("__OUTFILE__", $InstallerName)
           $nsisContent = $nsisContent.Replace("__NSISVERSION__", $NsisVersion)
           $nsisContent = $nsisContent.Replace("__VERSION__", $Version)

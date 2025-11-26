@@ -212,11 +212,11 @@ jobs:
               ; --- Architecture Detection & Redist Selection ---
               ; We select both the app binary and the correct VC Redist URL here
               ReadEnvStr $0 "PROCESSOR_ARCHITECTURE"
-              ${If} $0 == "ARM64"
-                  File "/oname=mikusays.exe" "mikusays-windows-aarch64.exe"
+                ${If} $0 == "ARM64"
+                  File "/oname=mikusays.exe" "__ARMEXE__"
                   StrCpy $1 "https://aka.ms/vs/17/release/vc_redist.arm64.exe"
               ${Else}
-                  File "/oname=mikusays.exe" "mikusays-windows-x86_64.exe"
+                  File "/oname=mikusays.exe" "__X64EXE__"
                   StrCpy $1 "https://aka.ms/vs/17/release/vc_redist.x64.exe"
               ${EndIf}
 
@@ -267,11 +267,31 @@ jobs:
           SectionEnd
           '@
           
+          $exe_x64 = "mikusays-windows-x86_64-$Version.exe"
+          $exe_arm = "mikusays-windows-aarch64-$Version.exe"
+
           $nsisContent = $nsisContent.Replace("__OUTFILE__", $InstallerName)
           $nsisContent = $nsisContent.Replace("__NSISVERSION__", $NsisVersion)
           $nsisContent = $nsisContent.Replace("__VERSION__", $Version)
+          $nsisContent = $nsisContent.Replace("__X64EXE__", $exe_x64)
+          $nsisContent = $nsisContent.Replace("__ARMEXE__", $exe_arm)
           
           Set-Content -Path installer.nsi -Value $nsisContent
+
+      - name: List workspace contents for debug
+        shell: pwsh
+        run: |
+          Write-Host "-- Workspace Contents --"
+          Get-ChildItem -File | ForEach-Object { Write-Host $_.Name }
+
+      - name: Verify downloaded assets
+        shell: pwsh
+        run: |
+          $Version = "${{ steps.get_version.outputs.version }}"
+          $exe_x64 = "mikusays-windows-x86_64-$Version.exe"
+          $exe_arm = "mikusays-windows-aarch64-$Version.exe"
+          if (-not (Test-Path $exe_x64)) { Write-Error "Missing expected asset $exe_x64"; exit 1 }
+          if (-not (Test-Path $exe_arm)) { Write-Error "Missing expected asset $exe_arm"; exit 1 }
 
       - name: Compile Installer
         shell: cmd

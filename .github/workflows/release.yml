@@ -154,7 +154,10 @@ jobs:
           ### Windows
           - **x64**: `mikusays-windows-x86_64.exe`
           - **ARM64**: `mikusays-windows-aarch64.exe`
-          
+
+          ### Windows Installer
+          - **Any**: `mikusays-windows-inst-any.exe`
+
           ### Linux (binary)
           - **x64**: `mikusays-linux-x64`
           - **ARM64**: `mikusays-linux-arm64`

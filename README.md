@@ -44,15 +44,22 @@ brew tap xxanqw/mikusays
 brew install mikusays
 ```
 
-### Windows (using Scoop)
-```bash
-scoop bucket add extras
-scoop bucket add xxanqw-bucket https://github.com/xxanqw/scoop-bucket
-scoop update
-scoop install mikusays
-```
+### Windows  
+- **Using Scoop**:
+  
+  ```bash
+  scoop bucket add extras
+  scoop bucket add xxanqw-bucket https://github.com/xxanqw/scoop-bucket
+  scoop update
+  scoop install mikusays
+  ```
+- **Using Installer**:
+  
+  Download `mikusays-windows-inst-any-x.x.x.exe` from [Latest release page](https://github.com/xxanqw/mikusays/releases/latest)
 
-Download from [Releases](https://github.com/xxanqw/mikusays/releases):
+---
+
+### Download from [Releases](https://github.com/xxanqw/mikusays/releases):
 
 - **Windows**: `mikusays-windows-*.exe`
     - Small note for Windows that application depends on `vcredist2022`  

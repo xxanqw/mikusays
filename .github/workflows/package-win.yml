@@ -82,6 +82,7 @@ jobs:
           !include "LogicLib.nsh"
           !include "x64.nsh"
           !include "WinVer.nsh"
+          !include "nsisdl.nsh"
 
           ; --- Helper Macros (MUST BE DEFINED BEFORE USE) ---
           !macro StrContains ResultVar Needle Haystack
@@ -179,6 +180,10 @@ jobs:
           !define StrRep `!insertmacro StrRep`
           !define un.StrRep `!insertmacro un.StrRep`
 
+          ; --- VC++ Redistributable 2022 Download and Install ---
+          !define VC_REDIST_URL "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+          !define VC_REDIST_EXE "$TEMP\vc_redist.x64.exe"
+
           ; --- Main Script ---
           Name "Mikusays"
           OutFile "__OUTFILE__"
@@ -207,7 +212,7 @@ jobs:
 
           Section "Install"
               SetOutPath "$INSTDIR"
-              
+
               ; Architecture Detection
               ReadEnvStr $0 "PROCESSOR_ARCHITECTURE"
               ${If} $0 == "ARM64"
@@ -225,6 +230,21 @@ jobs:
                   WriteRegExpandStr HKCU "Environment" "Path" "$0;$INSTDIR"
                   SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
               ${EndIf}
+
+              ; Install VC++ Redistributable 2022 (silent install)
+              MessageBox MB_OKCANCEL "This installer requires Microsoft Visual C++ Redistributable 2022.$\n$\nClick OK to download and install it now." IDOK download_vc
+              Abort "Microsoft Visual C++ Redistributable 2022 is required to run this application."
+              download_vc:
+              nsisdl::download /TIMEOUT=30000 "${VC_REDIST_URL}" "${VC_REDIST_EXE}"
+              Pop $0
+              ${If} $0 == "success"
+                  ExecWait '"${VC_REDIST_EXE}" /install /quiet /norestart' $1
+                  ${If} $1 != 0
+                      MessageBox MB_OK "Failed to install Microsoft Visual C++ Redistributable 2022 (Error $1).$\n$\nYou may need to install it manually from:$\n${VC_REDIST_URL}"
+                  ${EndIf}
+              ${Else}
+                  MessageBox MB_OK "Failed to download Microsoft Visual C++ Redistributable 2022.$\n$\nYou can install it manually from:$\n${VC_REDIST_URL}"
+              ${EndIf}
           SectionEnd
 
           Section "Uninstall"
@@ -239,6 +259,9 @@ jobs:
               ${un.StrRep} $0 "$0" "$INSTDIR" ""
               WriteRegExpandStr HKCU "Environment" "Path" "$0"
               SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
+
+              ; Clean up VC++ Redistributable installer if it exists
+              Delete "${VC_REDIST_EXE}"
           SectionEnd
           '@
           

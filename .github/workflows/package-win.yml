@@ -228,11 +228,9 @@ jobs:
               ; Define temp path for the installer
               StrCpy $2 "$TEMP\vc_redist.exe"
               
-              ; Use PowerShell to download. Quotes are carefully escaped:
-              ; Outer quotes '...' for NSIS ExecWait string
-              ; Inner quotes "..." for PowerShell command
-              ; Escaped quotes \' for values inside the PowerShell string
-              ExecWait 'powershell -NoProfile -NonInteractive -Command "Invoke-WebRequest -Uri \'$1\' -OutFile \'$2\'"' $3
+              ; Use PowerShell to download. We'll ensure the entire command is a single quoted string
+              ; ExecWait expects 1-2 parameters; to avoid tokenization use double-quoted command and escape inner double quotes
+              ExecWait "powershell -NoProfile -NonInteractive -Command \"Invoke-WebRequest -Uri '$1' -OutFile '$2'\"" $3
               
               ${If} $3 != 0
                   DetailPrint "Download failed (Error code: $3). Skipping Redistributable."

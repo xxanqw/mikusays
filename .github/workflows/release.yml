@@ -116,7 +116,7 @@ jobs:
         mkdir -p artifacts
         version="${{ needs.extract-version.outputs.version }}"
         cp target/${{ matrix.target }}/release/mikusays artifacts/mikusays-linux-${{ matrix.arch }}-$version
-        chmod +x artifacts/mikusays-linux-${{ matrix.arch }}
+        chmod +x artifacts/mikusays-linux-${{ matrix.arch }}-$version
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -153,7 +153,7 @@ jobs:
         mkdir -p artifacts
         version="${{ needs.extract-version.outputs.version }}"
         cp target/${{ matrix.target }}/release/mikusays artifacts/mikusays-macos-${{ matrix.arch }}-$version
-        chmod +x artifacts/mikusays-macos-${{ matrix.arch }}
+        chmod +x artifacts/mikusays-macos-${{ matrix.arch }}-$version
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4

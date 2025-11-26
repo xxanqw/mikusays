@@ -1,10 +1,15 @@
 <div align=center>
 
-<img width=500px src="https://github.com/user-attachments/assets/d08929ed-85c6-42c5-8858-b46753d34205">
+<img width="500px" src="https://github.com/user-attachments/assets/f8f42b9f-43c9-4c0b-914c-fc2bce5a438d" />
+
 
 # MikuSays 🎤
 
 A `cowsay` clone with Hatsune Miku ASCII art and speech bubbles.  
+
+**NOW WITH**  
+<img height=24 src="https://cdn.xserv.pp.ua/files/css/COLORS.svg" alt="COLORS">
+
 
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/xxanqw/mikusays?style=for-the-badge)](https://github.com/xxanqw/mikusays/releases/latest)
 [![AUR Package Version](https://img.shields.io/aur/version/mikusays?style=for-the-badge)](https://aur.archlinux.org/packages/mikusays)
@@ -14,11 +19,22 @@ A `cowsay` clone with Hatsune Miku ASCII art and speech bubbles.
 ## Usage
 
 ```bash
-mikusays "Hello, World!" # Chooses random style
+Usage: mikusays [OPTIONS] [TEXT]
 
-mikusays "World is Mine!" --style 4
+Arguments:
+  [TEXT]  Text to display in the speech bubble
 
-mikusays --list # Display all available styles
+Options:
+  -s, --style <STYLE>            Style of the Miku art. A random one is chosen if not specified
+  -l, --list                     List all available art styles with their indices
+      --rainbow                  Apply a smooth rainbow gradient across the ASCII art
+      --saturation <SATURATION>  Saturation level for rainbow gradient (0-100) [default: 100]
+      --brightness <BRIGHTNESS>  Brightness level for rainbow gradient (0-100) [default: 50]
+      --color <COLOR>            Override with a single solid color
+      --gradient <START:END>     Define a custom two-color gradient (e.g., --gradient red:blue)
+      --no-color                 Disable all coloring (respects NO_COLOR environment variable)
+  -h, --help                     Print help
+  -V, --version                  Print version
 ```
 
 ## Installation
@@ -28,12 +44,6 @@ mikusays --list # Display all available styles
 yay -S mikusays
 paru -S mikusays
 ```
-> [!NOTE]
-> On update 'cause of same linux file naming, you need to clear AUR cache before installing or hash will missmatch
-> ```bash
-> yay -Scc
-> paru -Scc
-> ```
 
 ### Debian / Ubuntu / Fedora / RHEL / CentOS
 The repository and instructions available here: https://apt.xxanqw.pp.ua
@@ -63,7 +73,7 @@ brew install mikusays
 
 - **Windows**: `mikusays-windows-*.exe`
     - Small note for Windows that application depends on `vcredist2022`  
-      (installing with scoop will resolve this dependency automatically)
+      (installing with scoop and installer resolve this dependency automatically)
 - **Linux**: `mikusays-linux-*` 
 - **macOS**: `mikusays-macos-*`
 

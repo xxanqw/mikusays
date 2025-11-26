@@ -72,7 +72,6 @@ jobs:
         run: |
           $Version = "${{ steps.get_version.outputs.version }}"
           $InstallerName = "mikusays-windows-inst-any-$Version.exe"
-          $UploadName = "mikusays-windows-inst-any-$Version.exe"
           
           # Prepend 0. to create a 4-part version string (0.X.Y.Z)
           $NsisVersion = "0.$Version"
@@ -85,9 +84,9 @@ jobs:
           !include "LogicLib.nsh"
           !include "x64.nsh"
           !include "WinVer.nsh"
-          !include "nsisdl.nsh"
+          ; Removed duplicate LogicLib.nsh inclusion
 
-          ; --- Helper Macros (MUST BE DEFINED BEFORE USE) ---
+          ; --- Helper Macros ---
           !macro StrContains ResultVar Needle Haystack
             Push "${Haystack}"
             Push "${Needle}"
@@ -132,7 +131,6 @@ jobs:
             Pop "${ResultVar}"
           !macroend
 
-          ; --- Uninstall-Specific Functions ---
           !macro un.StrRep ResultVar String SubString RepString
             Push "${String}"
             Push "${SubString}"
@@ -183,10 +181,6 @@ jobs:
           !define StrRep `!insertmacro StrRep`
           !define un.StrRep `!insertmacro un.StrRep`
 
-          ; --- VC++ Redistributable 2022 Download and Install ---
-          !define VC_REDIST_URL "https://aka.ms/vs/17/release/vc_redist.x64.exe"
-          !define VC_REDIST_EXE "$TEMP\vc_redist.x64.exe"
-
           ; --- Main Script ---
           Name "Mikusays"
           OutFile "__OUTFILE__"
@@ -201,7 +195,6 @@ jobs:
           VIAddVersionKey "FileVersion" "__VERSION__"
           VIAddVersionKey "ProductVersion" "__VERSION__"
 
-          ; Install to AppData\Local\Programs\mikusays (User Context)
           RequestExecutionLevel user
           InstallDir "$LOCALAPPDATA\Programs\mikusays"
 
@@ -216,37 +209,46 @@ jobs:
           Section "Install"
               SetOutPath "$INSTDIR"
 
-              ; Architecture Detection
+              ; --- Architecture Detection & Redist Selection ---
+              ; We select both the app binary and the correct VC Redist URL here
               ReadEnvStr $0 "PROCESSOR_ARCHITECTURE"
               ${If} $0 == "ARM64"
                   File "/oname=mikusays.exe" "mikusays-windows-aarch64.exe"
+                  StrCpy $1 "https://aka.ms/vs/17/release/vc_redist.arm64.exe"
               ${Else}
                   File "/oname=mikusays.exe" "mikusays-windows-x86_64.exe"
+                  StrCpy $1 "https://aka.ms/vs/17/release/vc_redist.x64.exe"
               ${EndIf}
 
               WriteUninstaller "$INSTDIR\uninstall.exe"
 
-              ; Add to PATH (Simple Registry Append)
+              ; --- Download and Install VC++ Redist (Using PowerShell) ---
+              DetailPrint "Downloading Visual C++ Redistributable..."
+              
+              ; Define temp path for the installer
+              StrCpy $2 "$TEMP\vc_redist.exe"
+              
+              ; Use PowerShell to download. Quotes are carefully escaped:
+              ; Outer quotes '...' for NSIS ExecWait string
+              ; Inner quotes "..." for PowerShell command
+              ; Escaped quotes \' for values inside the PowerShell string
+              ExecWait 'powershell -NoProfile -NonInteractive -Command "Invoke-WebRequest -Uri \'$1\' -OutFile \'$2\'"' $3
+              
+              ${If} $3 != 0
+                  DetailPrint "Download failed (Error code: $3). Skipping Redistributable."
+              ${Else}
+                  DetailPrint "Installing Visual C++ Redistributable..."
+                  ; /install /quiet /norestart are standard flags for VC Redist
+                  ExecWait '"$2" /install /quiet /norestart'
+                  Delete "$2" ; Clean up the downloaded file
+              ${EndIf}
+
+              ; --- Add to PATH ---
               ReadRegStr $0 HKCU "Environment" "Path"
               ${StrContains} $1 "$INSTDIR" "$0"
               ${If} $1 == ""
                   WriteRegExpandStr HKCU "Environment" "Path" "$0;$INSTDIR"
                   SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
-              ${EndIf}
-
-              ; Install VC++ Redistributable 2022 (silent install)
-              MessageBox MB_OKCANCEL "This installer requires Microsoft Visual C++ Redistributable 2022.$\n$\nClick OK to download and install it now." IDOK download_vc
-              Abort "Microsoft Visual C++ Redistributable 2022 is required to run this application."
-              download_vc:
-              nsisdl::download /TIMEOUT=30000 "${VC_REDIST_URL}" "${VC_REDIST_EXE}"
-              Pop $0
-              ${If} $0 == "success"
-                  ExecWait '"${VC_REDIST_EXE}" /install /quiet /norestart' $1
-                  ${If} $1 != 0
-                      MessageBox MB_OK "Failed to install Microsoft Visual C++ Redistributable 2022 (Error $1).$\n$\nYou may need to install it manually from:$\n${VC_REDIST_URL}"
-                  ${EndIf}
-              ${Else}
-                  MessageBox MB_OK "Failed to download Microsoft Visual C++ Redistributable 2022.$\n$\nYou can install it manually from:$\n${VC_REDIST_URL}"
               ${EndIf}
           SectionEnd
 
@@ -255,16 +257,13 @@ jobs:
               Delete "$INSTDIR\uninstall.exe"
               RMDir "$INSTDIR"
 
-              ; Remove from PATH (Simple String Replacement)
+              ; Remove from PATH
               ReadRegStr $0 HKCU "Environment" "Path"
               ${un.StrRep} $0 "$0" ";$INSTDIR" ""
               ${un.StrRep} $0 "$0" "$INSTDIR;" ""
               ${un.StrRep} $0 "$0" "$INSTDIR" ""
               WriteRegExpandStr HKCU "Environment" "Path" "$0"
               SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
-
-              ; Clean up VC++ Redistributable installer if it exists
-              Delete "${VC_REDIST_EXE}"
           SectionEnd
           '@
           

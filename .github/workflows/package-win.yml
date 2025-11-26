@@ -63,13 +63,16 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           $TAG = "${{ steps.get_tag.outputs.tag }}"
-          gh release download $TAG -p "mikusays-windows-*.exe"
+          $Version = "${{ steps.get_version.outputs.version }}"
+          gh release download $TAG -p "mikusays-windows-x86_64-$Version.exe"
+          gh release download $TAG -p "mikusays-windows-aarch64-$Version.exe"
 
       - name: Generate NSIS Script
         shell: pwsh
         run: |
           $Version = "${{ steps.get_version.outputs.version }}"
           $InstallerName = "mikusays-windows-inst-any-$Version.exe"
+          $UploadName = "mikusays-windows-inst-any-$Version.exe"
           
           # Prepend 0. to create a 4-part version string (0.X.Y.Z)
           $NsisVersion = "0.$Version"
@@ -281,5 +284,5 @@ jobs:
         run: |
           $TAG = "${{ steps.get_tag.outputs.tag }}"
           $Version = "${{ steps.get_version.outputs.version }}"
-          $InstallerName = "mikusays-windows-inst-any-$Version.exe"
-          gh release upload $TAG $InstallerName --clobber
+          $UploadName = "mikusays-windows-inst-any-$Version.exe"
+          gh release upload $TAG $UploadName --clobber

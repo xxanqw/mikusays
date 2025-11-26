@@ -54,6 +54,8 @@ jobs:
           ARCH_NAME="${{ matrix.deb_arch }}"
           if [ "$ARCH_NAME" = "amd64" ]; then ARCH_NAME="x64"; fi
           DEB_NAME="mikusays-debian-${ARCH_NAME}-${VERSION}.deb"
+          # Store version for later use
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "name=$DEB_NAME" >> $GITHUB_OUTPUT
 
       - name: Upload DEB artifact
@@ -83,7 +85,7 @@ jobs:
         with:
           upload_url: ${{ steps.get-release.outputs.upload_url }}
           asset_path: ${{ steps.find-deb.outputs.path }}
-          asset_name: ${{ steps.find-deb.outputs.name }}
+          asset_name: mikusays-debian-${{ matrix.arch }}-${{ steps.find-deb.outputs.version }}.deb
           asset_content_type: application/vnd.debian.binary-package
 
   build-rpm:
@@ -140,6 +142,8 @@ jobs:
           ARCH_NAME="${{ matrix.rpm_arch }}"
           if [ "$ARCH_NAME" = "x86_64" ]; then ARCH_NAME="x64"; fi
           RPM_NAME="mikusays-redhat-${ARCH_NAME}-${VERSION}.rpm"
+          # Store version for later use
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "name=$RPM_NAME" >> $GITHUB_OUTPUT
 
       - name: Upload RPM artifact
@@ -169,5 +173,5 @@ jobs:
         with:
           upload_url: ${{ steps.get-release.outputs.upload_url }}
           asset_path: ${{ steps.find-rpm.outputs.path }}
-          asset_name: ${{ steps.find-rpm.outputs.name }}
+          asset_name: mikusays-redhat-${{ matrix.arch }}-${{ steps.find-rpm.outputs.version }}.rpm
           asset_content_type: application/x-rpm

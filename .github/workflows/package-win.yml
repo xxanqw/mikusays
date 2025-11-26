@@ -124,47 +124,9 @@ jobs:
             Push "${String}"
             Push "${SubString}"
             Push "${RepString}"
-            Call StrRep
+            Call un.StrRep
             Pop "${ResultVar}"
           !macroend
-
-          Function StrRep
-            Exch $R2
-            Exch
-            Exch $R1
-            Exch
-            Exch $R0
-            Push $R3
-            Push $R4
-            Push $R5
-            Push $R6
-            Push $R7
-            StrCpy $R3 0
-            StrLen $R4 $R1
-            StrLen $R6 $R0
-            Start:
-              StrCpy $R5 $R0 $R4 $R3
-              StrCmp $R5 $R1 Found
-              IntOp $R3 $R3 + 1
-              IntCmp $R3 $R6 End End Start
-            Found:
-              StrCpy $R5 $R0 $R3
-              IntOp $R7 $R3 + $R4
-              StrCpy $R7 $R0 "" $R7
-              StrCpy $R0 "$R5$R2$R7"
-              StrLen $R6 $R0
-              IntOp $R3 $R3 + $R4
-              Goto Start
-            End:
-              Pop $R7
-              Pop $R6
-              Pop $R5
-              Pop $R4
-              Pop $R3
-              Pop $R2
-              Pop $R1
-              Exch $R0
-          FunctionEnd
 
           ; --- Uninstall-Specific Functions ---
           !macro un.StrRep ResultVar String SubString RepString

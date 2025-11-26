@@ -228,9 +228,9 @@ jobs:
               ; Define temp path for the installer
               StrCpy $2 "$TEMP\vc_redist.exe"
               
-              ; Use PowerShell to download. We'll ensure the entire command is a single quoted string
-              ; ExecWait expects 1-2 parameters; to avoid tokenization use double-quoted command and escape inner double quotes
-              ExecWait "powershell -NoProfile -NonInteractive -Command \"Invoke-WebRequest -Uri '$1' -OutFile '$2'\"" $3
+              ; Use PowerShell to download. We'll store the command in an $R9 var to avoid ExecWait tokenization
+              StrCpy $R9 'powershell -NoProfile -NonInteractive -Command "Invoke-WebRequest -Uri \"$1\" -OutFile \"$2\""'
+              ExecWait $R9 $3
               
               ${If} $3 != 0
                   DetailPrint "Download failed (Error code: $3). Skipping Redistributable."
@@ -290,6 +290,12 @@ jobs:
           $exe_arm = "mikusays-windows-aarch64-$Version.exe"
           if (-not (Test-Path $exe_x64)) { Write-Error "Missing expected asset $exe_x64"; exit 1 }
           if (-not (Test-Path $exe_arm)) { Write-Error "Missing expected asset $exe_arm"; exit 1 }
+
+      - name: Print ExecWait lines from installer.nsi
+        shell: pwsh
+        run: |
+          Write-Host "-- ExecWait lines from installer.nsi --"
+          Select-String -Path installer.nsi -Pattern 'ExecWait' | ForEach-Object { Write-Host $_.Line }
 
       - name: Compile Installer
         shell: cmd

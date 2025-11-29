@@ -80,7 +80,7 @@ jobs:
           
           $issContent = @'
           [Setup]
-          AppName=Mikusays
+          AppName=mikusays
           AppVersion=__VERSION__
           AppCopyright=2025 xxanqw
           AppPublisher=xxanqw

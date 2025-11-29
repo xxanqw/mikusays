@@ -103,9 +103,9 @@ cargo build --release
    Fix any errors that appear
    
 10. Finally, run the formatter:
-   ```bash
-   cargo fmt
-   ```
+    ```bash
+    cargo fmt
+    ```
 11. Commit and push your changes
 12. Open a pull request
 

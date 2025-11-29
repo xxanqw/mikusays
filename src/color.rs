@@ -375,47 +375,22 @@ fn rgb_to_ansi256(r: u8, g: u8, b: u8) -> u8 {
 }
 
 /// Convert RGB to ANSI 16 color code
-fn rgb_to_ansi16(r: u8, g: u8, b: u8) -> u8 {
-    // Calculate brightness
+pub(crate) fn rgb_to_ansi16(r: u8, g: u8, b: u8) -> u8 {
+    // Calculate brightness (perceived luminance)
     let brightness = (r as f32 * 0.299 + g as f32 * 0.587 + b as f32 * 0.114).round() as u8;
-
-    // Determine if it's bright or dark
     let is_bright = brightness > 128;
 
-    // Determine base color
-    let base_color = if r > g && r > b {
-        // Red dominant
-        if r > 192 && g < 64 && b < 64 {
-            1 // Red
-        } else if r > g && r > b {
-            3 // Yellow
-        } else {
-            7 // White
-        }
-    } else if g > r && g > b {
-        // Green dominant
-        if g > 192 && r < 64 && b < 64 {
-            2 // Green
-        } else if g > b {
-            3 // Yellow
-        } else {
-            6 // Cyan
-        }
-    } else {
-        // Blue dominant
-        if b > 192 && r < 64 && g < 64 {
-            4 // Blue
-        } else if b > r {
-            6 // Cyan
-        } else {
-            5 // Magenta
-        }
-    };
+    // Determine base color using simple thresholding on each channel, producing an index 0..7
+    let r_on = r > 128;
+    let g_on = g > 128;
+    let b_on = b > 128;
+    let base_idx = (r_on as u8) + (g_on as u8) * 2 + (b_on as u8) * 4; // 0..7
 
+    // SGR color codes: 30..37 for normal, 90..97 for bright
     if is_bright {
-        base_color + 8 // Bright colors are 8-15
+        90 + base_idx
     } else {
-        base_color // Normal colors are 0-7
+        30 + base_idx
     }
 }
 

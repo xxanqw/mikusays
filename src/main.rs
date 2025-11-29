@@ -58,6 +58,9 @@ pub struct Args {
     /// Disable all coloring (respects NO_COLOR environment variable)
     #[arg(long)]
     pub no_color: bool,
+    /// Print color detection/debug info and exit
+    #[arg(long)]
+    pub color_debug: bool,
 }
 
 #[derive(Debug)]
@@ -69,6 +72,8 @@ pub struct ColorConfig {
     pub single_color: Option<Color>,
     pub gradient: Option<(Color, Color)>,
     pub color_cache: Vec<Color>,
+    pub ansi_enabled: bool,
+    pub debug: bool,
 }
 
 pub fn parse_color_args(args: &Args) -> Result<ColorConfig, Box<dyn Error>> {
@@ -160,6 +165,12 @@ pub fn parse_color_args(args: &Args) -> Result<ColorConfig, Box<dyn Error>> {
         std::process::exit(1);
     }
 
+    // Determine if ANSI is enabled (Windows toggle helper) — don't enable if --no-color
+    #[cfg(windows)]
+    let ansi_enabled = !args.no_color && enable_windows_ansi();
+    #[cfg(not(windows))]
+    let ansi_enabled = false;
+
     Ok(ColorConfig {
         mode: color_mode,
         rainbow: args.rainbow,
@@ -168,6 +179,8 @@ pub fn parse_color_args(args: &Args) -> Result<ColorConfig, Box<dyn Error>> {
         single_color,
         gradient,
         color_cache: Vec::new(),
+        ansi_enabled,
+        debug: args.color_debug,
     })
 }
 
@@ -492,6 +505,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse color-related arguments
     let mut color_config = parse_color_args(&args)?;
 
+    // If color debug is requested, print information and exit
+    if args.color_debug {
+        eprintln!("Color Debug: mode={:?}, ansi_enabled={}, rainbow={}, saturation={}, brightness={}",
+            color_config.mode, color_config.ansi_enabled, color_config.rainbow, color_config.saturation, color_config.brightness);
+        if let Some(single) = &color_config.single_color {
+            eprintln!("Single color: {:?}", single);
+        }
+        if let Some((start, end)) = &color_config.gradient {
+            eprintln!("Gradient: {:?} -> {:?}", start, end);
+        }
+        return Ok(());
+    }
+
     draw_miku_says(&text, style, &mut color_config)?;
 
     Ok(())
@@ -585,6 +611,7 @@ mod tests {
             color: None,
             gradient: None,
             no_color: false,
+            color_debug: false,
         };
 
         let config = parse_color_args(&args).unwrap();
@@ -609,6 +636,7 @@ mod tests {
             color: None,
             gradient: None,
             no_color: true,
+            color_debug: false,
         };
 
         let config = parse_color_args(&args).unwrap();
@@ -656,6 +684,8 @@ mod tests {
             single_color: None,
             gradient: None,
             color_cache: vec![Color::Hex("#000000".to_string())], // Pre-filled
+            ansi_enabled: false,
+            debug: false,
         };
 
         // Test with 0 characters
@@ -677,6 +707,8 @@ mod tests {
             single_color: None,
             gradient: None,
             color_cache: vec![Color::Hex("#000000".to_string())], // Pre-filled
+            ansi_enabled: false,
+            debug: false,
         };
 
         let start = Color::Hex("#FF0000".to_string());
@@ -701,6 +733,8 @@ mod tests {
             single_color: None,
             gradient: None,
             color_cache: Vec::new(),
+            ansi_enabled: false,
+            debug: false,
         };
 
         generate_rainbow_cache(&mut config, 10);
@@ -713,6 +747,14 @@ mod tests {
     }
 
     #[test]
+    fn test_rgb_to_ansi16_mapping() {
+        // Validate mapping for basic colors
+        assert_eq!(crate::color::rgb_to_ansi16(255, 0, 0), 31);
+        assert_eq!(crate::color::rgb_to_ansi16(255, 255, 255), 97);
+        assert_eq!(crate::color::rgb_to_ansi16(0, 0, 0), 30);
+    }
+
+    #[test]
     fn test_generate_gradient_cache() {
         let mut config = ColorConfig {
             mode: ColorMode::Truecolor,
@@ -722,6 +764,8 @@ mod tests {
             single_color: None,
             gradient: None,
             color_cache: Vec::new(),
+            ansi_enabled: false,
+            debug: false,
         };
 
         let start = Color::Hex("#FF0000".to_string()); // Red
@@ -735,5 +779,23 @@ mod tests {
         // Check that last color is close to end
         let last_color = &config.color_cache[9];
         assert_ne!(first_color, last_color);
+    }
+
+    #[test]
+    fn test_parse_color_debug_flag() {
+        let args = Args {
+            text: Some("test".to_string()),
+            style: None,
+            list: false,
+            rainbow: false,
+            saturation: 100,
+            brightness: 50,
+            color: None,
+            gradient: None,
+            no_color: false,
+            color_debug: true,
+        };
+        let config = parse_color_args(&args).unwrap();
+        assert!(config.debug);
     }
 }

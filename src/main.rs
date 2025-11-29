@@ -520,8 +520,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // If color debug is requested, print information and exit
     if args.color_debug {
-        eprintln!("Color Debug: mode={:?}, ansi_enabled={}, rainbow={}, saturation={}, brightness={}",
-            color_config.mode, color_config.ansi_enabled, color_config.rainbow, color_config.saturation, color_config.brightness);
+        eprintln!(
+            "Color Debug: mode={:?}, ansi_enabled={}, rainbow={}, saturation={}, brightness={}",
+            color_config.mode,
+            color_config.ansi_enabled,
+            color_config.rainbow,
+            color_config.saturation,
+            color_config.brightness
+        );
         if let Some(single) = &color_config.single_color {
             eprintln!("Single color: {:?}", single);
         }

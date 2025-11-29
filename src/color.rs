@@ -506,9 +506,9 @@ pub fn detect_color_mode() -> ColorMode {
     }
 
     // Early checks
-    if std::env::var("COLORTERM").is_ok_and(|colorterm| {
-        colorterm.contains("truecolor") || colorterm.contains("24bit")
-    }) {
+    if std::env::var("COLORTERM")
+        .is_ok_and(|colorterm| colorterm.contains("truecolor") || colorterm.contains("24bit"))
+    {
         return ColorMode::Truecolor;
     }
 

@@ -520,6 +520,9 @@ pub fn detect_color_mode() -> ColorMode {
     }
 
     // Default fallback
+    #[cfg(windows)]
+    let mut mode = ColorMode::Ansi16;
+    #[cfg(not(windows))]
     let mode = ColorMode::Ansi16;
 
     // If running on Windows, try to enable ANSI (virtual terminal processing)

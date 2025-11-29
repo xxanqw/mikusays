@@ -167,7 +167,7 @@ pub fn parse_color_args(args: &Args) -> Result<ColorConfig, Box<dyn Error>> {
 
     // Determine if ANSI is enabled (Windows toggle helper) — don't enable if --no-color
     #[cfg(windows)]
-    let ansi_enabled = !args.no_color && enable_windows_ansi();
+    let ansi_enabled = !args.no_color && color::enable_windows_ansi();
     #[cfg(not(windows))]
     let ansi_enabled = false;
 
@@ -504,6 +504,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Parse color-related arguments
     let mut color_config = parse_color_args(&args)?;
+
+    if color_config.debug {
+        println!("Detected color mode: {:?}", color_config.mode);
+        println!("ANSI enabled: {}", color_config.ansi_enabled);
+        println!("NO_COLOR: {:?}", std::env::var("NO_COLOR").ok());
+        println!("COLORTERM: {:?}", std::env::var("COLORTERM").ok());
+        println!("TERM: {:?}", std::env::var("TERM").ok());
+        #[cfg(windows)]
+        {
+            println!("Windows shell hint: {:?}", color::detect_windows_shell());
+        }
+        return Ok(());
+    }
 
     // If color debug is requested, print information and exit
     if args.color_debug {

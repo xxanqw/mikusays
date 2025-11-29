@@ -1,4 +1,5 @@
 use clap::ValueEnum;
+// No external sysinfo dependency — use environment heuristics instead for Windows shell detection.
 use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
@@ -478,8 +479,113 @@ pub fn detect_color_mode() -> ColorMode {
         }
     }
 
-    // Default fallback
+    // If running on Windows, try to enable ANSI (virtual terminal processing)
+    #[cfg(windows)]
+    {
+        if enable_windows_ansi() {
+            // After enabling ANSI, reuse heuristic
+            if let Ok(colorterm) = std::env::var("COLORTERM")
+                && (colorterm.contains("truecolor") || colorterm.contains("24bit"))
+            {
+                return ColorMode::Truecolor;
+            }
+
+            if let Ok(term) = std::env::var("TERM") {
+                if term.contains("256color") {
+                    return ColorMode::Ansi256;
+                }
+                if term.contains("color") {
+                    return ColorMode::Ansi16;
+                }
+            }
+
+            return ColorMode::Ansi16;
+        } else {
+            // If we couldn't enable ANSI, detect shell and adjust gracefully
+            if let Some(shell) = detect_windows_shell() {
+                let shell = shell.to_lowercase();
+                if shell.contains("cmd.exe") {
+                    // cmd historically doesn't support ANSI; fallback to Ansi16
+                    return ColorMode::Ansi16;
+                }
+                if shell.contains("powershell") || shell.contains("pwsh") {
+                    // Try to detect term capability
+                    if let Ok(term) = std::env::var("TERM") {
+                        if term.contains("256color") {
+                            return ColorMode::Ansi256;
+                        }
+                    }
+                    // Default to Ansi16 when in older hosts
+                    return ColorMode::Ansi16;
+                }
+            }
+            // Generic fallback if no shell detected
+            return ColorMode::Ansi16;
+        }
+    }
+
+    // Default fallback for non-Windows
     ColorMode::Ansi16
+}
+
+/// Try to enable ANSI (virtual terminal processing) on Windows consoles.
+/// Returns true if enabling succeeded or isn't necessary, false otherwise.
+#[cfg(windows)]
+pub fn enable_windows_ansi() -> bool {
+    use std::ptr;
+    use winapi::um::consoleapi::{GetConsoleMode, SetConsoleMode};
+    use winapi::um::handleapi::INVALID_HANDLE_VALUE;
+    use winapi::um::processenv::GetStdHandle;
+    use winapi::um::winbase::STD_OUTPUT_HANDLE;
+    use winapi::um::wincon::ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+
+    unsafe {
+        let stdout = GetStdHandle(STD_OUTPUT_HANDLE);
+        if stdout == INVALID_HANDLE_VALUE {
+            return false;
+        }
+
+        let mut mode: u32 = 0;
+        if GetConsoleMode(stdout, &mut mode) == 0 {
+            return false;
+        }
+
+        let new_mode = mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+        if SetConsoleMode(stdout, new_mode) == 0 {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// Detect the parent shell name on Windows, using the sysinfo crate.
+#[cfg(windows)]
+pub fn detect_windows_shell() -> Option<String> {
+    // Heuristic checks using common env vars
+    // PowerShell sets PSModulePath; pwsh may also set POWERSHELL_* env vars.
+    if std::env::var("PSModulePath").is_ok() {
+        return Some("powershell".to_string());
+    }
+
+    if std::env::var("PWshPROFILE").is_ok() || std::env::var("$PWSH_VERSION").is_ok() {
+        // Some versions of pwsh may expose env vars; use generic pwsh hint
+        return Some("pwsh".to_string());
+    }
+
+    // COMSPEC usually points to cmd.exe on Windows
+    if let Ok(comspec) = std::env::var("COMSPEC") {
+        if comspec.to_lowercase().ends_with("cmd.exe") {
+            return Some("cmd.exe".to_string());
+        }
+    }
+
+    // Windows Terminal sets WT_SESSION, but it's not a shell; just return terminal info
+    if std::env::var("WT_SESSION").is_ok() {
+        return Some("windows_terminal".to_string());
+    }
+
+    None
 }
 
 /// Linear interpolation between two colors in HSV space

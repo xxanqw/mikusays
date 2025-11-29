@@ -1,5 +1,11 @@
 use clap::{Parser, ValueEnum};
 use crossterm::terminal::size;
+#[cfg(windows)]
+use crossterm::style::{SetForegroundColor, ResetColor, Print};
+#[cfg(windows)]
+use crossterm::QueueableCommand;
+#[cfg(windows)]
+use std::io::stdout;
 use std::error::Error;
 use std::str::FromStr;
 use unicode_width::UnicodeWidthStr;
@@ -428,22 +434,51 @@ fn draw_miku_says(
                 let mut colored_line = String::new();
                 colored_line.push_str(&horizontal_padding);
 
-                for c in line.chars() {
-                    if c.is_whitespace() {
-                        colored_line.push(c);
-                    } else if color_index < color_config.color_cache.len() {
-                        let color = &color_config.color_cache[color_index];
-                        let ansi_code = color.to_ansi_fg(color_config.mode);
-                        colored_line.push_str(&ansi_code);
-                        colored_line.push(c);
-                        colored_line.push_str("\x1b[0m"); // Reset
-                        color_index += 1;
-                    } else {
-                        colored_line.push(c);
-                    }
-                }
+                        // If on Windows and ANSI wasn't enabled, fallback to crossterm color APIs
+                        #[cfg(windows)]
+                        {
+                            if !color::enable_windows_ansi() {
+                                let mut stdout = stdout();
+                                stdout.queue(Print(horizontal_padding.clone())).ok();
 
-                println!("{}", colored_line);
+                                for c in line.chars() {
+                                    if c.is_whitespace() {
+                                        stdout.queue(Print(c)).ok();
+                                    } else if color_index < color_config.color_cache.len() {
+                                        let color = &color_config.color_cache[color_index];
+                                        let ct_color = color::to_crossterm_color(color);
+                                        stdout.queue(SetForegroundColor(ct_color)).ok();
+                                        stdout.queue(Print(c)).ok();
+                                        stdout.queue(ResetColor).ok();
+                                        color_index += 1;
+                                    } else {
+                                        stdout.queue(Print(c)).ok();
+                                    }
+                                }
+
+                                stdout.queue(Print("\n")).ok();
+                                stdout.flush().ok();
+                                // Skip the ANSI branch below
+                                continue;
+                            }
+                        }
+
+                        for c in line.chars() {
+                            if c.is_whitespace() {
+                                colored_line.push(c);
+                            } else if color_index < color_config.color_cache.len() {
+                                let color = &color_config.color_cache[color_index];
+                                let ansi_code = color.to_ansi_fg(color_config.mode);
+                                colored_line.push_str(&ansi_code);
+                                colored_line.push(c);
+                                colored_line.push_str("\x1b[0m"); // Reset
+                                color_index += 1;
+                            } else {
+                                colored_line.push(c);
+                            }
+                        }
+
+                        println!("{}", colored_line);
             } else if let Some(single_color) = &color_config.single_color {
                 // Apply single solid color
                 let ansi_code = single_color.to_ansi_fg(color_config.mode);

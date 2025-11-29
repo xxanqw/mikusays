@@ -19,9 +19,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Inno Setup
-        run: choco install innosetup
-
       - name: Get Version from Cargo.toml
         id: get_version
         shell: pwsh

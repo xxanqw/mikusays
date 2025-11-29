@@ -193,19 +193,19 @@ jobs:
           - **ARM64**: `mikusays-windows-aarch64-${{ needs.extract-version.outputs.version }}.exe`
 
           ### Windows Installer
-          - **Any**: `mikusays-windows-inst-any.exe`
+          - **Any**: `mikusays-windows-inst-any-${{ needs.extract-version.outputs.version }}.exe`
 
           ### Linux (binary)
           - **x64**: `mikusays-linux-x64-${{ needs.extract-version.outputs.version }}`
           - **ARM64**: `mikusays-linux-arm64-${{ needs.extract-version.outputs.version }}`
 
           ### Debian Package
-          - **x64 Debian Package**: `mikusays-debian-x64.deb`
-          - **ARM64 Debian Package**: `mikusays-debian-arm64.deb`
+          - **x64 Debian Package**: `mikusays-debian-x64-${{ needs.extract-version.outputs.version }}.deb`
+          - **ARM64 Debian Package**: `mikusays-debian-arm64-${{ needs.extract-version.outputs.version }}.deb`
 
           ### RedHat (RPM) Package
-          - **x64 RPM Package**: `mikusays-redhat-x64.rpm`
-          - **ARM64 RPM Package**: `mikusays-redhat-arm64.rpm`
+          - **x64 RPM Package**: `mikusays-redhat-x64-${{ needs.extract-version.outputs.version }}.rpm`
+          - **ARM64 RPM Package**: `mikusays-redhat-arm64-${{ needs.extract-version.outputs.version }}.rpm`
 
           ### Repository for Debian / Ubuntu / Fedora / RHEL / CentOS
           Information on how to add it available here https://apt.xxanqw.pp.ua

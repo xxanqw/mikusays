@@ -1,4 +1,4 @@
-name: Windows Installer Packaging
+name: Windows Installer Packaging (Inno Setup)
 
 on:
   release:
@@ -19,8 +19,8 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install NSIS
-        run: choco install nsis
+      - name: Install Inno Setup
+        run: choco install innosetup
 
       - name: Get Version from Cargo.toml
         id: get_version
@@ -64,217 +64,200 @@ jobs:
         run: |
           $TAG = "${{ steps.get_tag.outputs.tag }}"
           $Version = "${{ steps.get_version.outputs.version }}"
+          
+          # Download the raw binaries
           gh release download $TAG -p "mikusays-windows-x86_64-$Version.exe"
           gh release download $TAG -p "mikusays-windows-aarch64-$Version.exe"
+          
+          # Rename to standard names for the Inno Script
+          mv "mikusays-windows-x86_64-$Version.exe" "mikusays-windows-x86_64.exe"
+          mv "mikusays-windows-aarch64-$Version.exe" "mikusays-windows-aarch64.exe"
 
-      - name: Generate NSIS Script
+      - name: Generate Inno Setup Script
         shell: pwsh
         run: |
           $Version = "${{ steps.get_version.outputs.version }}"
-          $InstallerName = "mikusays-windows-inst-any-$Version.exe"
+          $InstallerName = "mikusays-windows-inst-any-$Version"
           
-          # Prepend 0. to create a 4-part version string (0.X.Y.Z)
-          $NsisVersion = "0.$Version"
+          Write-Host "Generating Inno Setup script for version: $Version"
           
-          Write-Host "Installer Name: $InstallerName"
-          Write-Host "NSIS Internal Version: $NsisVersion"
-
-          $nsisContent = @'
-          !include "MUI2.nsh"
-          !include "LogicLib.nsh"
-          !include "x64.nsh"
-          !include "WinVer.nsh"
-          ; Removed duplicate LogicLib.nsh inclusion
-
-          ; --- Helper Macros ---
-          !macro StrContains ResultVar Needle Haystack
-            Push "${Haystack}"
-            Push "${Needle}"
-            Call StrContains
-            Pop "${ResultVar}"
-          !macroend
-
-          Function StrContains
-            Exch $R1
-            Exch
-            Exch $R0
-            Push $R2
-            Push $R3
-            Push $R4
-            Push $R5
-            StrLen $R2 $R0
-            StrLen $R3 $R1
-            StrCpy $R5 ""
-            Loop:
-              StrCpy $R4 $R0 $R3
-              StrCmp $R4 $R1 Found
-              StrCpy $R0 $R0 "" 1
-              StrLen $R2 $R0
-              IntCmp $R2 $R3 Loop Loop End
-            Found:
-              StrCpy $R5 "1"
-            End:
-              Pop $R5
-              Pop $R4
-              Pop $R3
-              Pop $R2
-              Pop $R0
-              Pop $R1
-              Exch $R5
-          FunctionEnd
-
-          !macro StrRep ResultVar String SubString RepString
-            Push "${String}"
-            Push "${SubString}"
-            Push "${RepString}"
-            Call un.StrRep
-            Pop "${ResultVar}"
-          !macroend
-
-          !macro un.StrRep ResultVar String SubString RepString
-            Push "${String}"
-            Push "${SubString}"
-            Push "${RepString}"
-            Call un.StrRep
-            Pop "${ResultVar}"
-          !macroend
-
-          Function un.StrRep
-            Exch $R2
-            Exch
-            Exch $R1
-            Exch
-            Exch $R0
-            Push $R3
-            Push $R4
-            Push $R5
-            Push $R6
-            Push $R7
-            StrCpy $R3 0
-            StrLen $R4 $R1
-            StrLen $R6 $R0
-            Start:
-              StrCpy $R5 $R0 $R4 $R3
-              StrCmp $R5 $R1 Found
-              IntOp $R3 $R3 + 1
-              IntCmp $R3 $R6 End End Start
-            Found:
-              StrCpy $R5 $R0 $R3
-              IntOp $R7 $R3 + $R4
-              StrCpy $R7 $R0 "" $R7
-              StrCpy $R0 "$R5$R2$R7"
-              StrLen $R6 $R0
-              IntOp $R3 $R3 + $R4
-              Goto Start
-            End:
-              Pop $R7
-              Pop $R6
-              Pop $R5
-              Pop $R4
-              Pop $R3
-              Pop $R2
-              Pop $R1
-              Exch $R0
-          FunctionEnd
-
-          !define StrContains `!insertmacro StrContains`
-          !define StrRep `!insertmacro StrRep`
-          !define un.StrRep `!insertmacro un.StrRep`
-
-          ; --- Main Script ---
-          Name "Mikusays"
-          OutFile "__OUTFILE__"
-          Unicode True
-
-          ; --- Metadata & Versioning ---
-          VIProductVersion "__NSISVERSION__"
-          VIAddVersionKey "ProductName" "Mikusays"
-          VIAddVersionKey "CompanyName" "xxanqw"
-          VIAddVersionKey "LegalCopyright" "© xxanqw"
-          VIAddVersionKey "FileDescription" "Mikusays Installer"
-          VIAddVersionKey "FileVersion" "__VERSION__"
-          VIAddVersionKey "ProductVersion" "__VERSION__"
-
-          RequestExecutionLevel user
-          InstallDir "$LOCALAPPDATA\Programs\mikusays"
-
-          !define MUI_ABORTWARNING
-          !insertmacro MUI_PAGE_WELCOME
-          !insertmacro MUI_PAGE_INSTFILES
-          !insertmacro MUI_PAGE_FINISH
-          !insertmacro MUI_UNPAGE_CONFIRM
-          !insertmacro MUI_UNPAGE_INSTFILES
-          !insertmacro MUI_LANGUAGE "English"
-
-          Section "Install"
-              SetOutPath "$INSTDIR"
-
-              ; --- Architecture Detection & Redist Selection ---
-              ; We select both the app binary and the correct VC Redist URL here
-              ReadEnvStr $0 "PROCESSOR_ARCHITECTURE"
-                ${If} $0 == "ARM64"
-                  File "/oname=mikusays.exe" "__ARMEXE__"
-                  StrCpy $1 "https://aka.ms/vs/17/release/vc_redist.arm64.exe"
-              ${Else}
-                  File "/oname=mikusays.exe" "__X64EXE__"
-                  StrCpy $1 "https://aka.ms/vs/17/release/vc_redist.x64.exe"
-              ${EndIf}
-
-              WriteUninstaller "$INSTDIR\uninstall.exe"
-
-              ; --- Download and Install VC++ Redist (Using PowerShell) ---
-              DetailPrint "Downloading Visual C++ Redistributable..."
+          $issContent = @'
+          [Setup]
+          AppName=Mikusays
+          AppVersion=__VERSION__
+          AppCopyright=2025 xxanqw
+          AppPublisher=xxanqw
+          AppPublisherURL=https://xxanqw.pp.ua/
+          AppSupportURL=https://github.com/xxanqw/mikusays/issues
+          AppUpdatesURL=https://github.com/xxanqw/mikusays/releases/latest
+          
+          AppId={{A0ED7972-D08B-48CB-8331-729D1001FF16}
+          
+          DefaultDirName={localappdata}\Programs\mikusays
+          DefaultGroupName=Mikusays
+          DisableProgramGroupPage=yes
+          PrivilegesRequired=lowest
+          
+          ; -- Output Configuration --
+          OutputBaseFilename=__OUTFILE__
+          OutputDir=.
+          Compression=lzma2/ultra64
+          SolidCompression=yes
+          
+          ; -- Architecture Configuration --
+          ArchitecturesInstallIn64BitMode=x64compatible arm64
+          ArchitecturesAllowed=x64compatible arm64
+          
+          ChangesEnvironment=yes
+          
+          [Languages]
+          Name: "english"; MessagesFile: "compiler:Default.isl"
+          
+          [Files]
+          Source: "mikusays-windows-x86_64.exe"; DestDir: "{app}"; DestName: "mikusays.exe"; Check: IsX64; Flags: ignoreversion
+          Source: "mikusays-windows-aarch64.exe"; DestDir: "{app}"; DestName: "mikusays.exe"; Check: IsARM64; Flags: ignoreversion
+          
+          [Icons]
+          Name: "{group}\Mikusays"; Filename: "{app}\mikusays.exe"
+          Name: "{group}\Uninstall Mikusays"; Filename: "{uninstallexe}"
+          
+          [Code]
+          function IsX64: Boolean;
+          begin
+            Result := Is64BitInstallMode and (ProcessorArchitecture = paX64);
+          end;
+          
+          function IsARM64: Boolean;
+          begin
+            Result := Is64BitInstallMode and (ProcessorArchitecture = paARM64);
+          end;
+          
+          const
+            VC_REDIST_X64_URL = 'https://aka.ms/vs/17/release/vc_redist.x64.exe';
+            VC_REDIST_ARM64_URL = 'https://aka.ms/vs/17/release/vc_redist.arm64.exe';
+            
+          var
+            DownloadPage: TDownloadWizardPage;
+          
+          procedure InitializeWizard;
+          begin
+            DownloadPage := CreateDownloadPage(SetupMessage(msgWizardPreparing), SetupMessage(msgPreparingDesc), nil);
+          end;
+          
+          function NextButtonClick(CurPageID: Integer): Boolean;
+          var
+            RedistUrl, RedistFile: String;
+            ResultCode: Integer;
+          begin
+            Result := True;
+            
+            if CurPageID = wpReady then
+            begin
+              DownloadPage.Clear;
               
-              ; Define temp path for the installer
-              StrCpy $2 "$TEMP\vc_redist.exe"
+              if IsARM64 then
+                RedistUrl := VC_REDIST_ARM64_URL
+              else
+                RedistUrl := VC_REDIST_X64_URL;
+                
+              RedistFile := 'vc_redist.exe';
               
-              ; Use PowerShell to download. We'll store the command in an $R9 var to avoid ExecWait tokenization
-              StrCpy $R9 'powershell -NoProfile -NonInteractive -Command "Invoke-WebRequest -Uri \"$1\" -OutFile \"$2\""'
-              ExecWait $R9 $3
+              DownloadPage.Add(RedistUrl, RedistFile, '');
+              DownloadPage.Show;
               
-              ${If} $3 != 0
-                  DetailPrint "Download failed (Error code: $3). Skipping Redistributable."
-              ${Else}
-                  DetailPrint "Installing Visual C++ Redistributable..."
-                  ; /install /quiet /norestart are standard flags for VC Redist
-                  ExecWait '"$2" /install /quiet /norestart'
-                  Delete "$2" ; Clean up the downloaded file
-              ${EndIf}
-
-              ; --- Add to PATH ---
-              ReadRegStr $0 HKCU "Environment" "Path"
-              ${StrContains} $1 "$INSTDIR" "$0"
-              ${If} $1 == ""
-                  WriteRegExpandStr HKCU "Environment" "Path" "$0;$INSTDIR"
-                  SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
-              ${EndIf}
-          SectionEnd
-
-          Section "Uninstall"
-              Delete "$INSTDIR\mikusays.exe"
-              Delete "$INSTDIR\uninstall.exe"
-              RMDir "$INSTDIR"
-
-              ; Remove from PATH
-              ReadRegStr $0 HKCU "Environment" "Path"
-              ${un.StrRep} $0 "$0" ";$INSTDIR" ""
-              ${un.StrRep} $0 "$0" "$INSTDIR;" ""
-              ${un.StrRep} $0 "$0" "$INSTDIR" ""
-              WriteRegExpandStr HKCU "Environment" "Path" "$0"
-              SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
-          SectionEnd
+              try
+                try
+                  DownloadPage.Download; 
+                  Exec(ExpandConstant('{tmp}\' + RedistFile), '/install /quiet /norestart', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+                except
+                  if MsgBox('Download of Visual C++ Redistributable failed: ' + GetExceptionMessage + #13#10#13#10 + 'Do you want to continue installation anyway?', mbError, MB_YESNO) = IDNO then
+                    Result := False;
+                end;
+              finally
+                DownloadPage.Hide;
+              end;
+            end;
+          end;
+          
+          function NeedsAddPath(Param: string): boolean;
+          var
+            OrigPath: string;
+          begin
+            if not RegQueryStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', OrigPath) then
+            begin
+              Result := True;
+              exit;
+            end;
+            Result := Pos(';' + Param + ';', ';' + OrigPath + ';') = 0;
+          end;
+          
+          procedure RemovePath(Param: string);
+          var
+            OrigPath: string;
+            P: Integer;
+          begin
+            if not RegQueryStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', OrigPath) then
+              exit;
+              
+            P := Pos(';' + Param + ';', OrigPath);
+            if P > 0 then
+            begin
+              Delete(OrigPath, P + 1, Length(Param) + 1);
+              RegWriteExpandStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', OrigPath);
+              exit;
+            end;
+            
+            if Pos(Param + ';', OrigPath) = 1 then
+            begin
+              Delete(OrigPath, 1, Length(Param) + 1);
+              RegWriteExpandStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', OrigPath);
+              exit;
+            end;
+            
+            P := Pos(';' + Param, OrigPath);
+            if (P > 0) and (P = Length(OrigPath) - Length(Param)) then
+            begin
+              Delete(OrigPath, P, Length(Param) + 1);
+              RegWriteExpandStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', OrigPath);
+            end;
+          end;
+          
+          procedure CurStepChanged(CurStep: TSetupStep);
+          var
+            OrigPath: string;
+          begin
+            if CurStep = ssPostInstall then
+            begin
+              if NeedsAddPath(ExpandConstant('{app}')) then
+              begin
+                if RegQueryStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', OrigPath) then
+                begin
+                  if OrigPath = '' then
+                    OrigPath := ExpandConstant('{app}')
+                  else
+                    OrigPath := OrigPath + ';' + ExpandConstant('{app}');
+                end
+                else
+                  OrigPath := ExpandConstant('{app}');
+                  
+                RegWriteExpandStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', OrigPath);
+              end;
+            end;
+          end;
+          
+          procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+          begin
+            if CurUninstallStep = usUninstall then
+            begin
+              RemovePath(ExpandConstant('{app}'));
+            end;
+          end;
           '@
           
-          $exe_x64 = "mikusays-windows-x86_64-$Version.exe"
-          $exe_arm = "mikusays-windows-aarch64-$Version.exe"
-
-          $nsisContent = $nsisContent.Replace("__OUTFILE__", $InstallerName)
-          $nsisContent = $nsisContent.Replace("__NSISVERSION__", $NsisVersion)
-          $nsisContent = $nsisContent.Replace("__VERSION__", $Version)
-          $nsisContent = $nsisContent.Replace("__X64EXE__", $exe_x64)
-          $nsisContent = $nsisContent.Replace("__ARMEXE__", $exe_arm)
+          $issContent = $issContent.Replace("__VERSION__", $Version)
+          $issContent = $issContent.Replace("__OUTFILE__", $InstallerName)
           
-          Set-Content -Path installer.nsi -Value $nsisContent
+          Set-Content -Path "installer.iss" -Value $issContent
 
       - name: List workspace contents for debug
         shell: pwsh
@@ -282,24 +265,9 @@ jobs:
           Write-Host "-- Workspace Contents --"
           Get-ChildItem -File | ForEach-Object { Write-Host $_.Name }
 
-      - name: Verify downloaded assets
-        shell: pwsh
-        run: |
-          $Version = "${{ steps.get_version.outputs.version }}"
-          $exe_x64 = "mikusays-windows-x86_64-$Version.exe"
-          $exe_arm = "mikusays-windows-aarch64-$Version.exe"
-          if (-not (Test-Path $exe_x64)) { Write-Error "Missing expected asset $exe_x64"; exit 1 }
-          if (-not (Test-Path $exe_arm)) { Write-Error "Missing expected asset $exe_arm"; exit 1 }
-
-      - name: Print ExecWait lines from installer.nsi
-        shell: pwsh
-        run: |
-          Write-Host "-- ExecWait lines from installer.nsi --"
-          Select-String -Path installer.nsi -Pattern 'ExecWait' | ForEach-Object { Write-Host $_.Line }
-
       - name: Compile Installer
         shell: cmd
-        run: '"C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi'
+        run: '"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss'
 
       - name: Upload Installer to Release
         env:
@@ -307,5 +275,14 @@ jobs:
         run: |
           $TAG = "${{ steps.get_tag.outputs.tag }}"
           $Version = "${{ steps.get_version.outputs.version }}"
-          $UploadName = "mikusays-windows-inst-any-$Version.exe"
-          gh release upload $TAG $UploadName --clobber
+          
+          # With OutputDir=. the file is in root
+          $UploadFile = "mikusays-windows-inst-any-$Version.exe"
+          
+          if (-not (Test-Path $UploadFile)) {
+             Write-Error "Could not find compiled installer at $UploadFile"
+             Get-ChildItem
+             exit 1
+          }
+          
+          gh release upload $TAG $UploadFile --clobber

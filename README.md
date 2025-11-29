@@ -84,7 +84,35 @@ cargo build --release
 
 ## Development
 
-```bash
-cargo build
-cargo run -- "message"
-```
+1. Fork repository
+2. Clone your fork
+3. Implement your changes
+4. If needed, write tests (it would be great)
+5. Run your code with your changes
+   ```bash
+   cargo run -- [your implemented methods, or just text if it's ASCII only].
+   ```
+7. Run the tests
+   ```bash
+   cargo test
+   ```
+8. Check your code quality with:
+   ```bash
+   cargo clippy -- -D warnings
+   ```
+   Fix any errors that appear
+   
+10. Finally, run the formatter:
+   ```bash
+   cargo fmt
+   ```
+11. Commit and push your changes
+12. Open a pull request
+
+Now you're a contributor!
+
+<div align=center>
+
+<img height="124" src="https://github.com/user-attachments/assets/f3d4e4e8-0fa4-40a1-bc89-aafbbd896a73" />
+
+</div>

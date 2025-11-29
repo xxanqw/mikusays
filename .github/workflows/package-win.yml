@@ -2,7 +2,7 @@ name: Windows Installer Packaging (Inno Setup)
 
 on:
   release:
-    types: [published]
+    types: [released]
   workflow_dispatch:
     inputs:
       tag_name:

@@ -1,6 +1,6 @@
 [package]
 name = "mikusays"
-version = "0.1.4"
+version = "0.1.4-2"
 edition = "2024"
 description = "A \"cowsay\" clone with Hatsune Miku ASCII art and speech bubbles."
 license = "MIT"
@@ -31,3 +31,7 @@ crossterm = "0.29"
 unicode-width = "0.2.2"
 rand = "0.9.2"
 clap = { version = "4.5.53", features = ["derive"] }
+# sysinfo removed; using env var heuristics instead
+
+# Windows console API to enable virtual terminal processing (ANSI)
+winapi = { version = "0.3", features = ["consoleapi", "wincon", "processenv", "handleapi", "winbase"] }

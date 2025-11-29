@@ -1,6 +1,9 @@
 use clap::{Parser, ValueEnum};
+use crossterm::QueueableCommand;
+use crossterm::style::{Print, ResetColor, SetForegroundColor};
 use crossterm::terminal::size;
 use std::error::Error;
+use std::io::{Write, stdout};
 use std::str::FromStr;
 use unicode_width::UnicodeWidthStr;
 
@@ -55,6 +58,9 @@ pub struct Args {
     /// Disable all coloring (respects NO_COLOR environment variable)
     #[arg(long)]
     pub no_color: bool,
+    /// Print color detection/debug info and exit
+    #[arg(long)]
+    pub color_debug: bool,
 }
 
 #[derive(Debug)]
@@ -66,6 +72,8 @@ pub struct ColorConfig {
     pub single_color: Option<Color>,
     pub gradient: Option<(Color, Color)>,
     pub color_cache: Vec<Color>,
+    pub ansi_enabled: bool,
+    pub debug: bool,
 }
 
 pub fn parse_color_args(args: &Args) -> Result<ColorConfig, Box<dyn Error>> {
@@ -157,6 +165,12 @@ pub fn parse_color_args(args: &Args) -> Result<ColorConfig, Box<dyn Error>> {
         std::process::exit(1);
     }
 
+    // Determine if ANSI is enabled (Windows toggle helper) — don't enable if --no-color
+    #[cfg(windows)]
+    let ansi_enabled = !args.no_color && color::enable_windows_ansi();
+    #[cfg(not(windows))]
+    let ansi_enabled = false;
+
     Ok(ColorConfig {
         mode: color_mode,
         rainbow: args.rainbow,
@@ -165,6 +179,8 @@ pub fn parse_color_args(args: &Args) -> Result<ColorConfig, Box<dyn Error>> {
         single_color,
         gradient,
         color_cache: Vec::new(),
+        ansi_enabled,
+        debug: args.color_debug,
     })
 }
 
@@ -425,30 +441,38 @@ fn draw_miku_says(
 
             // Apply coloring to Miku art lines
             if color_config.mode != ColorMode::NoColor && !color_config.color_cache.is_empty() {
-                let mut colored_line = String::new();
-                colored_line.push_str(&horizontal_padding);
+                // Use crossterm queueing to color characters so it's platform-agnostic
+                let mut stdout = stdout();
+                stdout.queue(Print(horizontal_padding.clone())).ok();
 
                 for c in line.chars() {
                     if c.is_whitespace() {
-                        colored_line.push(c);
+                        stdout.queue(Print(c)).ok();
                     } else if color_index < color_config.color_cache.len() {
                         let color = &color_config.color_cache[color_index];
-                        let ansi_code = color.to_ansi_fg(color_config.mode);
-                        colored_line.push_str(&ansi_code);
-                        colored_line.push(c);
-                        colored_line.push_str("\x1b[0m"); // Reset
+                        let ct_color = color::to_crossterm_color(color);
+                        stdout.queue(SetForegroundColor(ct_color)).ok();
+                        stdout.queue(Print(c)).ok();
+                        stdout.queue(ResetColor).ok();
                         color_index += 1;
                     } else {
-                        colored_line.push(c);
+                        stdout.queue(Print(c)).ok();
                     }
                 }
 
-                println!("{}", colored_line);
+                stdout.queue(Print("\n")).ok();
+                stdout.flush().ok();
+                continue;
             } else if let Some(single_color) = &color_config.single_color {
-                // Apply single solid color
-                let ansi_code = single_color.to_ansi_fg(color_config.mode);
-                let reset_code = "\x1b[0m";
-                println!("{}{}{}{}", horizontal_padding, ansi_code, line, reset_code);
+                // Apply single solid color using crossterm
+                let mut stdout = stdout();
+                let ct_color = color::to_crossterm_color(single_color);
+                stdout.queue(Print(horizontal_padding.clone())).ok();
+                stdout.queue(SetForegroundColor(ct_color)).ok();
+                stdout.queue(Print(line)).ok();
+                stdout.queue(ResetColor).ok();
+                stdout.queue(Print("\n")).ok();
+                stdout.flush().ok();
             } else {
                 // No coloring
                 println!("{}{}", horizontal_padding, line);
@@ -480,6 +504,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Parse color-related arguments
     let mut color_config = parse_color_args(&args)?;
+
+    if color_config.debug {
+        println!("Detected color mode: {:?}", color_config.mode);
+        println!("ANSI enabled: {}", color_config.ansi_enabled);
+        println!("NO_COLOR: {:?}", std::env::var("NO_COLOR").ok());
+        println!("COLORTERM: {:?}", std::env::var("COLORTERM").ok());
+        println!("TERM: {:?}", std::env::var("TERM").ok());
+        #[cfg(windows)]
+        {
+            println!("Windows shell hint: {:?}", color::detect_windows_shell());
+        }
+        return Ok(());
+    }
+
+    // If color debug is requested, print information and exit
+    if args.color_debug {
+        eprintln!(
+            "Color Debug: mode={:?}, ansi_enabled={}, rainbow={}, saturation={}, brightness={}",
+            color_config.mode,
+            color_config.ansi_enabled,
+            color_config.rainbow,
+            color_config.saturation,
+            color_config.brightness
+        );
+        if let Some(single) = &color_config.single_color {
+            eprintln!("Single color: {:?}", single);
+        }
+        if let Some((start, end)) = &color_config.gradient {
+            eprintln!("Gradient: {:?} -> {:?}", start, end);
+        }
+        return Ok(());
+    }
 
     draw_miku_says(&text, style, &mut color_config)?;
 
@@ -574,6 +630,7 @@ mod tests {
             color: None,
             gradient: None,
             no_color: false,
+            color_debug: false,
         };
 
         let config = parse_color_args(&args).unwrap();
@@ -598,6 +655,7 @@ mod tests {
             color: None,
             gradient: None,
             no_color: true,
+            color_debug: false,
         };
 
         let config = parse_color_args(&args).unwrap();
@@ -645,6 +703,8 @@ mod tests {
             single_color: None,
             gradient: None,
             color_cache: vec![Color::Hex("#000000".to_string())], // Pre-filled
+            ansi_enabled: false,
+            debug: false,
         };
 
         // Test with 0 characters
@@ -666,6 +726,8 @@ mod tests {
             single_color: None,
             gradient: None,
             color_cache: vec![Color::Hex("#000000".to_string())], // Pre-filled
+            ansi_enabled: false,
+            debug: false,
         };
 
         let start = Color::Hex("#FF0000".to_string());
@@ -690,6 +752,8 @@ mod tests {
             single_color: None,
             gradient: None,
             color_cache: Vec::new(),
+            ansi_enabled: false,
+            debug: false,
         };
 
         generate_rainbow_cache(&mut config, 10);
@@ -702,6 +766,14 @@ mod tests {
     }
 
     #[test]
+    fn test_rgb_to_ansi16_mapping() {
+        // Validate mapping for basic colors
+        assert_eq!(crate::color::rgb_to_ansi16(255, 0, 0), 31);
+        assert_eq!(crate::color::rgb_to_ansi16(255, 255, 255), 97);
+        assert_eq!(crate::color::rgb_to_ansi16(0, 0, 0), 30);
+    }
+
+    #[test]
     fn test_generate_gradient_cache() {
         let mut config = ColorConfig {
             mode: ColorMode::Truecolor,
@@ -711,6 +783,8 @@ mod tests {
             single_color: None,
             gradient: None,
             color_cache: Vec::new(),
+            ansi_enabled: false,
+            debug: false,
         };
 
         let start = Color::Hex("#FF0000".to_string()); // Red
@@ -724,5 +798,23 @@ mod tests {
         // Check that last color is close to end
         let last_color = &config.color_cache[9];
         assert_ne!(first_color, last_color);
+    }
+
+    #[test]
+    fn test_parse_color_debug_flag() {
+        let args = Args {
+            text: Some("test".to_string()),
+            style: None,
+            list: false,
+            rainbow: false,
+            saturation: 100,
+            brightness: 50,
+            color: None,
+            gradient: None,
+            no_color: false,
+            color_debug: true,
+        };
+        let config = parse_color_args(&args).unwrap();
+        assert!(config.debug);
     }
 }

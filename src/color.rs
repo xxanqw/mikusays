@@ -1,4 +1,5 @@
 use clap::ValueEnum;
+// No external sysinfo dependency — use environment heuristics instead for Windows shell detection.
 use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
@@ -374,47 +375,22 @@ fn rgb_to_ansi256(r: u8, g: u8, b: u8) -> u8 {
 }
 
 /// Convert RGB to ANSI 16 color code
-fn rgb_to_ansi16(r: u8, g: u8, b: u8) -> u8 {
-    // Calculate brightness
+pub(crate) fn rgb_to_ansi16(r: u8, g: u8, b: u8) -> u8 {
+    // Calculate brightness (perceived luminance)
     let brightness = (r as f32 * 0.299 + g as f32 * 0.587 + b as f32 * 0.114).round() as u8;
-
-    // Determine if it's bright or dark
     let is_bright = brightness > 128;
 
-    // Determine base color
-    let base_color = if r > g && r > b {
-        // Red dominant
-        if r > 192 && g < 64 && b < 64 {
-            1 // Red
-        } else if r > g && r > b {
-            3 // Yellow
-        } else {
-            7 // White
-        }
-    } else if g > r && g > b {
-        // Green dominant
-        if g > 192 && r < 64 && b < 64 {
-            2 // Green
-        } else if g > b {
-            3 // Yellow
-        } else {
-            6 // Cyan
-        }
-    } else {
-        // Blue dominant
-        if b > 192 && r < 64 && g < 64 {
-            4 // Blue
-        } else if b > r {
-            6 // Cyan
-        } else {
-            5 // Magenta
-        }
-    };
+    // Determine base color using simple thresholding on each channel, producing an index 0..7
+    let r_on = r > 128;
+    let g_on = g > 128;
+    let b_on = b > 128;
+    let base_idx = (r_on as u8) + (g_on as u8) * 2 + (b_on as u8) * 4; // 0..7
 
+    // SGR color codes: 30..37 for normal, 90..97 for bright
     if is_bright {
-        base_color + 8 // Bright colors are 8-15
+        90 + base_idx
     } else {
-        base_color // Normal colors are 0-7
+        30 + base_idx
     }
 }
 
@@ -457,45 +433,131 @@ fn ansi_to_rgb(code: u8) -> (u8, u8, u8) {
     }
 }
 
-/// Detect the best available color mode for the terminal
+// (Removed older detect_color_mode to keep a single refactored implementation)
+
+/// Try to enable ANSI (virtual terminal processing) on Windows consoles.
+/// Returns true if enabling succeeded or isn't necessary, false otherwise.
+#[cfg(windows)]
+pub fn enable_windows_ansi() -> bool {
+    // no ptr usage required; removed unused import
+    use winapi::um::consoleapi::{GetConsoleMode, SetConsoleMode};
+    use winapi::um::handleapi::INVALID_HANDLE_VALUE;
+    use winapi::um::processenv::GetStdHandle;
+    use winapi::um::winbase::STD_OUTPUT_HANDLE;
+    use winapi::um::wincon::ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+
+    unsafe {
+        let stdout = GetStdHandle(STD_OUTPUT_HANDLE);
+        if stdout == INVALID_HANDLE_VALUE {
+            return false;
+        }
+
+        let mut mode: u32 = 0;
+        if GetConsoleMode(stdout, &mut mode) == 0 {
+            return false;
+        }
+
+        let new_mode = mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+        if SetConsoleMode(stdout, new_mode) == 0 {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// Detect the parent shell name on Windows, using environment hints.
+#[cfg(windows)]
+pub fn detect_windows_shell() -> Option<String> {
+    // Heuristic checks using common env vars
+    if std::env::var("PSModulePath").is_ok() {
+        return Some("powershell".to_string());
+    }
+    if std::env::var("PWshPROFILE").is_ok() || std::env::var("PWSH_VERSION").is_ok() {
+        return Some("pwsh".to_string());
+    }
+    if let Ok(comspec) = std::env::var("COMSPEC") {
+        if comspec.to_lowercase().ends_with("cmd.exe") {
+            return Some("cmd.exe".to_string());
+        }
+    }
+    if std::env::var("WT_SESSION").is_ok() {
+        return Some("windows_terminal".to_string());
+    }
+    None
+}
+
+#[cfg(not(windows))]
+#[allow(dead_code)]
+pub fn detect_windows_shell() -> Option<String> {
+    None
+}
+
+/// Convert Color to a crossterm Color (helper for use across platforms)
+pub fn to_crossterm_color(color: &Color) -> crossterm::style::Color {
+    let (r, g, b) = color.to_rgb();
+    crossterm::style::Color::Rgb { r, g, b }
+}
+
+/// Detect the parent shell name on Windows, using the sysinfo crate.
 pub fn detect_color_mode() -> ColorMode {
     if std::env::var("NO_COLOR").is_ok() {
         return ColorMode::NoColor;
     }
 
-    if let Ok(colorterm) = std::env::var("COLORTERM")
-        && (colorterm.contains("truecolor") || colorterm.contains("24bit"))
+    // Early checks
+    if std::env::var("COLORTERM")
+        .is_ok_and(|colorterm| colorterm.contains("truecolor") || colorterm.contains("24bit"))
     {
         return ColorMode::Truecolor;
     }
 
-    if let Ok(term) = std::env::var("TERM") {
-        if term.contains("256color") {
-            return ColorMode::Ansi256;
-        }
-        if term.contains("color") {
-            return ColorMode::Ansi16;
-        }
+    if std::env::var("TERM").is_ok_and(|term| term.contains("256color")) {
+        return ColorMode::Ansi256;
+    }
+    if std::env::var("TERM").is_ok_and(|term| term.contains("color")) {
+        return ColorMode::Ansi16;
     }
 
     // Default fallback
-    ColorMode::Ansi16
-}
+    #[cfg(windows)]
+    let mut mode = ColorMode::Ansi16;
+    #[cfg(not(windows))]
+    let mode = ColorMode::Ansi16;
 
-/// Linear interpolation between two colors in HSV space
-pub fn lerp_color_hsv(start: &Color, end: &Color, t: f32) -> Color {
-    let (h1, s1, v1) = rgb_to_hsv(start.to_rgb());
-    let (h2, s2, v2) = rgb_to_hsv(end.to_rgb());
+    // If running on Windows, try to enable ANSI (virtual terminal processing)
+    #[cfg(windows)]
+    {
+        if enable_windows_ansi() {
+            // Re-check for a better mode
+            if let Ok(colorterm) = std::env::var("COLORTERM") {
+                if colorterm.contains("truecolor") || colorterm.contains("24bit") {
+                    mode = ColorMode::Truecolor;
+                }
+            }
+            if let Ok(term) = std::env::var("TERM") {
+                if term.contains("256color") {
+                    mode = ColorMode::Ansi256;
+                }
+            }
+        } else if let Some(shell) = detect_windows_shell() {
+            let shell = shell.to_lowercase();
+            if shell.contains("cmd.exe") {
+                // cmd historically doesn't support ANSI; use 16 colors fallback
+                mode = ColorMode::Ansi16;
+            } else if shell.contains("powershell") || shell.contains("pwsh") {
+                if let Ok(term) = std::env::var("TERM") {
+                    if term.contains("256color") {
+                        mode = ColorMode::Ansi256;
+                    }
+                }
+            } else {
+                mode = ColorMode::Ansi16;
+            }
+        }
+    }
 
-    // Handle hue interpolation correctly (shortest path around the color wheel)
-    let h_diff = (h2 - h1 + 180.0) % 360.0 - 180.0;
-    let h = (h1 + h_diff * t + 360.0) % 360.0;
-
-    let s = s1 + (s2 - s1) * t;
-    let v = v1 + (v2 - v1) * t;
-
-    let (r, g, b) = hsv_to_rgb(h, s, v);
-    Color::Truecolor(r, g, b)
+    mode
 }
 
 /// Convert RGB to HSV
@@ -524,6 +586,22 @@ fn rgb_to_hsv((r, g, b): (u8, u8, u8)) -> (f32, f32, f32) {
     let v = max;
 
     (h, s, v)
+}
+
+/// Linear interpolation between two colors in HSV space
+pub fn lerp_color_hsv(start: &Color, end: &Color, t: f32) -> Color {
+    let (h1, s1, v1) = rgb_to_hsv(start.to_rgb());
+    let (h2, s2, v2) = rgb_to_hsv(end.to_rgb());
+
+    // Handle hue interpolation correctly (shortest path around the color wheel)
+    let h_diff = (h2 - h1 + 180.0) % 360.0 - 180.0;
+    let h = (h1 + h_diff * t + 360.0) % 360.0;
+
+    let s = s1 + (s2 - s1) * t;
+    let v = v1 + (v2 - v1) * t;
+
+    let (r, g, b) = hsv_to_rgb(h, s, v);
+    Color::Truecolor(r, g, b)
 }
 
 /// Convert HSV to RGB

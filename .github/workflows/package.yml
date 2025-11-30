@@ -63,7 +63,7 @@ jobs:
           echo "name=$DEB_NAME" >> $GITHUB_OUTPUT
 
       - name: Upload DEB artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: deb-package-${{ matrix.arch }}
           path: ${{ steps.find-deb.outputs.path }}
@@ -153,7 +153,7 @@ jobs:
           echo "name=$RPM_NAME" >> $GITHUB_OUTPUT
 
       - name: Upload RPM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: rpm-package-${{ matrix.arch }}
           path: ${{ steps.find-rpm.outputs.path }}

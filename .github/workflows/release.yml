@@ -70,7 +70,7 @@ jobs:
         copy "target\${{ matrix.target }}\release\mikusays.exe" "artifacts\mikusays-windows-$arch-$version.exe"
     
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: mikusays-windows-${{ matrix.target }}
         path: artifacts\*
@@ -119,7 +119,7 @@ jobs:
         chmod +x artifacts/mikusays-linux-${{ matrix.arch }}-$version
     
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: mikusays-linux-${{ matrix.arch }}
         path: artifacts/*
@@ -156,7 +156,7 @@ jobs:
         chmod +x artifacts/mikusays-macos-${{ matrix.arch }}-$version
     
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: mikusays-macos-${{ matrix.arch }}
         path: artifacts/*

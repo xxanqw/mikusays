@@ -1,4 +1,6 @@
 name: Build Packages
+permissions:
+  contents: read
 
 on:
   release:
@@ -13,6 +15,8 @@ on:
 jobs:
   build-deb:
     name: Build DEB Package (${{ matrix.arch }})
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -90,6 +94,8 @@ jobs:
 
   build-rpm:
     name: Build RPM Package (${{ matrix.arch }})
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     strategy:
       matrix:

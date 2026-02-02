@@ -30,7 +30,7 @@ assets = [
 crossterm = "0.29"
 unicode-width = "0.2.2"
 rand = "0.9.2"
-clap = { version = "4.5.53", features = ["derive"] }
+clap = { version = "4.5.56", features = ["derive"] }
 # sysinfo removed; using env var heuristics instead
 
 # Windows console API to enable virtual terminal processing (ANSI)

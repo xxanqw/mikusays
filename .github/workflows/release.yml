@@ -16,7 +16,7 @@ jobs:
       version: ${{ steps.get_version.outputs.version }}
       version_valid: ${{ steps.validate_version.outputs.valid }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Get version from Cargo.toml
       id: get_version
@@ -52,7 +52,7 @@ jobs:
           - x86_64-pc-windows-msvc
           - aarch64-pc-windows-msvc
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -86,7 +86,7 @@ jobs:
           - target: aarch64-unknown-linux-gnu  
             arch: arm64
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -135,7 +135,7 @@ jobs:
           - target: aarch64-apple-darwin
             arch: arm64
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -167,7 +167,7 @@ jobs:
     needs: [extract-version, build-windows, build-linux, build-macos]
     if: startsWith(github.ref, 'refs/tags/v') && needs.extract-version.outputs.version_valid == 'true'
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     
     - name: Download all artifacts
       uses: actions/download-artifact@v4

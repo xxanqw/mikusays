@@ -1,25 +1,18 @@
-use clap::{Parser, ValueEnum};
+use clap::error::ErrorKind;
+use clap::{CommandFactory, Parser};
 use crossterm::QueueableCommand;
-use crossterm::style::{Print, ResetColor, SetForegroundColor};
+use crossterm::style::{Print, ResetColor};
 use crossterm::terminal::size;
 use std::error::Error;
+use std::fmt;
 use std::io::{Write, stdout};
 use std::str::FromStr;
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 mod color;
 mod mikuart;
 use color::{Color, ColorMode, detect_color_mode, lerp_color_hsv};
 use mikuart::get_miku_art;
-
-#[derive(Debug, Clone, ValueEnum)]
-enum ColorFormat {
-    Hex,
-    Rgb,
-    Hsl,
-    Ansi,
-    Named,
-}
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -28,7 +21,7 @@ pub struct Args {
     pub text: Option<String>,
 
     /// Style of the Miku art. A random one is chosen if not specified
-    #[arg(short, long)]
+    #[arg(short, long, value_parser = clap::value_parser!(i32).range(0..))]
     pub style: Option<i32>,
 
     /// List all available art styles with their indices
@@ -36,19 +29,19 @@ pub struct Args {
     pub list: bool,
 
     /// Apply a smooth rainbow gradient across the ASCII art
-    #[arg(long)]
+    #[arg(long, conflicts_with_all = ["color", "gradient"])]
     pub rainbow: bool,
 
     /// Saturation level for rainbow gradient (0-100)
-    #[arg(long, default_value_t = 100)]
+    #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u8).range(0..=100))]
     pub saturation: u8,
 
     /// Brightness level for rainbow gradient (0-100)
-    #[arg(long, default_value_t = 50)]
+    #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u8).range(0..=100))]
     pub brightness: u8,
 
     /// Override with a single solid color
-    #[arg(long, value_name = "COLOR")]
+    #[arg(long, value_name = "COLOR", conflicts_with = "gradient")]
     pub color: Option<String>,
 
     /// Define a custom two-color gradient (e.g., --gradient red:blue)
@@ -76,7 +69,21 @@ pub struct ColorConfig {
     pub debug: bool,
 }
 
-pub fn parse_color_args(args: &Args) -> Result<ColorConfig, Box<dyn Error>> {
+#[derive(Debug, PartialEq)]
+pub struct ColorConfigError(String);
+
+impl fmt::Display for ColorConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl Error for ColorConfigError {}
+
+const COLOR_FORMAT_HELP: &str =
+    "expected a named color, #RRGGBB, #RGB, R,G,B, hsl(H,S%,L%), or ANSI value 0-255";
+
+pub fn parse_color_args(args: &Args) -> Result<ColorConfig, ColorConfigError> {
     // Detect color mode
     let mut color_mode = detect_color_mode();
 
@@ -86,83 +93,65 @@ pub fn parse_color_args(args: &Args) -> Result<ColorConfig, Box<dyn Error>> {
     }
 
     // Parse single color if provided
-    let single_color = if let Some(color_str) = args.color.as_deref() {
-        match Color::from_str(color_str) {
-            Ok(color) => Some(color),
-            Err(e) => {
-                eprintln!("Error parsing color '{}': {}", color_str, e);
-                eprintln!("Valid color formats:");
-                eprintln!("  - Named colors: red, blue, green, etc.");
-                eprintln!("  - Hex: #RRGGBB or #RGB (e.g., #FF0000 or #F00)");
-                eprintln!("  - RGB: R,G,B (e.g., 255,0,128)");
-                eprintln!("  - HSL: hsl(H,S%,L%) (e.g., hsl(180,100%,50%))");
-                eprintln!("  - ANSI: 0-255 (e.g., 93 for bright yellow)");
-                std::process::exit(1);
-            }
-        }
-    } else {
-        None
-    };
+    let single_color = args
+        .color
+        .as_deref()
+        .map(|color_str| {
+            Color::from_str(color_str).map_err(|error| {
+                ColorConfigError(format!(
+                    "invalid color '{color_str}': {error}; {COLOR_FORMAT_HELP}"
+                ))
+            })
+        })
+        .transpose()?;
 
     // Parse gradient if provided
     let gradient = if let Some(gradient_str) = args.gradient.as_deref() {
-        let parts: Vec<&str> = gradient_str.split(':').collect();
-        if parts.len() != 2 {
-            eprintln!("Error: Gradient format should be START:END (e.g., --gradient red:blue)");
-            std::process::exit(1);
+        let (start_str, end_str) = gradient_str.split_once(':').ok_or_else(|| {
+            ColorConfigError(
+                "invalid gradient: expected START:END (for example, red:blue)".to_string(),
+            )
+        })?;
+
+        if start_str.is_empty() || end_str.is_empty() || end_str.contains(':') {
+            return Err(ColorConfigError(
+                "invalid gradient: expected exactly two colors as START:END".to_string(),
+            ));
         }
 
-        let start = match Color::from_str(parts[0]) {
-            Ok(color) => color,
-            Err(e) => {
-                eprintln!("Error parsing gradient start color '{}': {}", parts[0], e);
-                eprintln!("Valid color formats:");
-                eprintln!("  - Named colors: red, blue, green, etc.");
-                eprintln!("  - Hex: #RRGGBB or #RGB (e.g., #FF0000 or #F00)");
-                eprintln!("  - RGB: R,G,B (e.g., 255,0,128)");
-                eprintln!("  - HSL: hsl(H,S%,L%) (e.g., hsl(180,100%,50%))");
-                eprintln!("  - ANSI: 0-255 (e.g., 93 for bright yellow)");
-                std::process::exit(1);
-            }
-        };
-
-        let end = match Color::from_str(parts[1]) {
-            Ok(color) => color,
-            Err(e) => {
-                eprintln!("Error parsing gradient end color '{}': {}", parts[1], e);
-                eprintln!("Valid color formats:");
-                eprintln!("  - Named colors: red, blue, green, etc.");
-                eprintln!("  - Hex: #RRGGBB or #RGB (e.g., #FF0000 or #F00)");
-                eprintln!("  - RGB: R,G,B (e.g., 255,0,128)");
-                eprintln!("  - HSL: hsl(H,S%,L%) (e.g., hsl(180,100%,50%))");
-                eprintln!("  - ANSI: 0-255 (e.g., 93 for bright yellow)");
-                std::process::exit(1);
-            }
-        };
+        let start = Color::from_str(start_str).map_err(|error| {
+            ColorConfigError(format!(
+                "invalid gradient start '{start_str}': {error}; {COLOR_FORMAT_HELP}"
+            ))
+        })?;
+        let end = Color::from_str(end_str).map_err(|error| {
+            ColorConfigError(format!(
+                "invalid gradient end '{end_str}': {error}; {COLOR_FORMAT_HELP}"
+            ))
+        })?;
 
         Some((start, end))
     } else {
         None
     };
 
-    // Validate saturation and brightness
-    let saturation = args.saturation.clamp(0, 100);
-    let brightness = args.brightness.clamp(0, 100);
-
-    // Check for conflicting options
+    // Keep this validation for direct callers as well as Clap-parsed CLI input.
     if args.rainbow && single_color.is_some() {
-        eprintln!("Error: Cannot use --rainbow and --color together");
-        std::process::exit(1);
+        return Err(ColorConfigError(
+            "--rainbow cannot be used with --color".to_string(),
+        ));
     }
 
     if args.rainbow && gradient.is_some() {
-        eprintln!("Error: Cannot use --rainbow and --gradient together");
-        std::process::exit(1);
+        return Err(ColorConfigError(
+            "--rainbow cannot be used with --gradient".to_string(),
+        ));
     }
 
     if single_color.is_some() && gradient.is_some() {
-        eprintln!("Error: Cannot use --color and --gradient together");
-        std::process::exit(1);
+        return Err(ColorConfigError(
+            "--color cannot be used with --gradient".to_string(),
+        ));
     }
 
     // Determine if ANSI is enabled (Windows toggle helper) — don't enable if --no-color
@@ -174,8 +163,8 @@ pub fn parse_color_args(args: &Args) -> Result<ColorConfig, Box<dyn Error>> {
     Ok(ColorConfig {
         mode: color_mode,
         rainbow: args.rainbow,
-        saturation,
-        brightness,
+        saturation: args.saturation,
+        brightness: args.brightness,
         single_color,
         gradient,
         color_cache: Vec::new(),
@@ -245,24 +234,47 @@ pub fn get_speech_bubble_lines(text: &str) -> Vec<String> {
 }
 
 pub fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
+    if max_width == 0 {
+        return if text.is_empty() {
+            Vec::new()
+        } else {
+            vec![text.to_string()]
+        };
+    }
+
     let mut lines = Vec::new();
-    let words: Vec<&str> = text.split_whitespace().collect();
     let mut current_line = String::new();
 
-    for word in words {
+    for word in text.split_whitespace() {
         let word_width = word.width();
         let current_width = current_line.width();
+        let separator_width = usize::from(!current_line.is_empty());
 
-        if current_width + word_width < max_width {
+        if word_width <= max_width && current_width + separator_width + word_width <= max_width {
             if !current_line.is_empty() {
                 current_line.push(' ');
             }
             current_line.push_str(word);
-        } else {
-            if !current_line.is_empty() {
-                lines.push(current_line);
+            continue;
+        }
+
+        if !current_line.is_empty() {
+            lines.push(std::mem::take(&mut current_line));
+        }
+
+        if word_width <= max_width {
+            current_line.push_str(word);
+            continue;
+        }
+
+        let chunks = split_word_by_width(word, max_width);
+        let last_index = chunks.len().saturating_sub(1);
+        for (index, chunk) in chunks.into_iter().enumerate() {
+            if index == last_index && chunk.width() < max_width {
+                current_line = chunk;
+            } else {
+                lines.push(chunk);
             }
-            current_line = word.to_string();
         }
     }
 
@@ -271,6 +283,28 @@ pub fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     }
 
     lines
+}
+
+fn split_word_by_width(word: &str, max_width: usize) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut chunk = String::new();
+    let mut chunk_width = 0;
+
+    for character in word.chars() {
+        let character_width = character.width().unwrap_or(0);
+        if !chunk.is_empty() && chunk_width + character_width > max_width {
+            chunks.push(std::mem::take(&mut chunk));
+            chunk_width = 0;
+        }
+        chunk.push(character);
+        chunk_width += character_width;
+    }
+
+    if !chunk.is_empty() {
+        chunks.push(chunk);
+    }
+
+    chunks
 }
 
 pub fn generate_rainbow_cache(color_config: &mut ColorConfig, total_chars: usize) {
@@ -309,7 +343,11 @@ pub fn generate_gradient_cache(
 
     // Generate smooth gradient across all characters
     for i in 0..total_chars {
-        let t = i as f32 / total_chars as f32;
+        let t = if total_chars == 1 {
+            0.0
+        } else {
+            i as f32 / (total_chars - 1) as f32
+        };
         let color = lerp_color_hsv(start, end, t);
         color_config.color_cache.push(color);
     }
@@ -359,8 +397,15 @@ fn draw_miku_says(
     let speech_bubble_lines = get_speech_bubble_lines(text);
     let miku_art = get_miku_art(Some(style), None);
 
-    // Calculate total character count for color distribution
-    let total_chars: usize = miku_art.iter().map(|line| line.chars().count()).sum();
+    // Distribute colors across characters that are actually colored.
+    let total_chars: usize = miku_art
+        .iter()
+        .map(|line| {
+            line.chars()
+                .filter(|character| !character.is_whitespace())
+                .count()
+        })
+        .sum();
 
     // Generate color cache if needed
     if color_config.rainbow {
@@ -443,36 +488,36 @@ fn draw_miku_says(
             if color_config.mode != ColorMode::NoColor && !color_config.color_cache.is_empty() {
                 // Use crossterm queueing to color characters so it's platform-agnostic
                 let mut stdout = stdout();
-                stdout.queue(Print(horizontal_padding.clone())).ok();
+                stdout.queue(Print(horizontal_padding.clone()))?;
 
                 for c in line.chars() {
                     if c.is_whitespace() {
-                        stdout.queue(Print(c)).ok();
+                        stdout.queue(Print(c))?;
                     } else if color_index < color_config.color_cache.len() {
                         let color = &color_config.color_cache[color_index];
-                        let ct_color = color::to_crossterm_color(color);
-                        stdout.queue(SetForegroundColor(ct_color)).ok();
-                        stdout.queue(Print(c)).ok();
-                        stdout.queue(ResetColor).ok();
+                        stdout.queue(Print(color.to_ansi_fg(color_config.mode)))?;
+                        stdout.queue(Print(c))?;
+                        stdout.queue(ResetColor)?;
                         color_index += 1;
                     } else {
-                        stdout.queue(Print(c)).ok();
+                        stdout.queue(Print(c))?;
                     }
                 }
 
-                stdout.queue(Print("\n")).ok();
-                stdout.flush().ok();
+                stdout.queue(Print("\n"))?;
+                stdout.flush()?;
                 continue;
-            } else if let Some(single_color) = &color_config.single_color {
+            } else if color_config.mode != ColorMode::NoColor
+                && let Some(single_color) = &color_config.single_color
+            {
                 // Apply single solid color using crossterm
                 let mut stdout = stdout();
-                let ct_color = color::to_crossterm_color(single_color);
-                stdout.queue(Print(horizontal_padding.clone())).ok();
-                stdout.queue(SetForegroundColor(ct_color)).ok();
-                stdout.queue(Print(line)).ok();
-                stdout.queue(ResetColor).ok();
-                stdout.queue(Print("\n")).ok();
-                stdout.flush().ok();
+                stdout.queue(Print(horizontal_padding.clone()))?;
+                stdout.queue(Print(single_color.to_ansi_fg(color_config.mode)))?;
+                stdout.queue(Print(line))?;
+                stdout.queue(ResetColor)?;
+                stdout.queue(Print("\n"))?;
+                stdout.flush()?;
             } else {
                 // No coloring
                 println!("{}{}", horizontal_padding, line);
@@ -500,10 +545,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(1);
     });
 
-    let style = args.style.unwrap_or(-1); // Default to -1 to select a random style
+    let styles_count = get_miku_art(None, Some(true)).len();
+    let style = match args.style {
+        Some(style) if style as usize >= styles_count => Args::command()
+            .error(
+                ErrorKind::InvalidValue,
+                format!(
+                    "style {style} does not exist; choose a value between 0 and {}",
+                    styles_count - 1
+                ),
+            )
+            .exit(),
+        Some(style) => style,
+        None => -1,
+    };
 
     // Parse color-related arguments
-    let mut color_config = parse_color_args(&args)?;
+    let mut color_config = parse_color_args(&args).unwrap_or_else(|error| {
+        Args::command()
+            .error(ErrorKind::ValueValidation, error.to_string())
+            .exit()
+    });
 
     if color_config.debug {
         println!("Detected color mode: {:?}", color_config.mode);
@@ -514,25 +576,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(windows)]
         {
             println!("Windows shell hint: {:?}", color::detect_windows_shell());
-        }
-        return Ok(());
-    }
-
-    // If color debug is requested, print information and exit
-    if args.color_debug {
-        eprintln!(
-            "Color Debug: mode={:?}, ansi_enabled={}, rainbow={}, saturation={}, brightness={}",
-            color_config.mode,
-            color_config.ansi_enabled,
-            color_config.rainbow,
-            color_config.saturation,
-            color_config.brightness
-        );
-        if let Some(single) = &color_config.single_color {
-            eprintln!("Single color: {:?}", single);
-        }
-        if let Some((start, end)) = &color_config.gradient {
-            eprintln!("Gradient: {:?} -> {:?}", start, end);
         }
         return Ok(());
     }
@@ -566,7 +609,8 @@ mod tests {
     fn test_wrap_text_long_word() {
         let text = "ThisIsAVeryLongWordThatExceedsMaxWidth";
         let wrapped = wrap_text(text, 10);
-        assert_eq!(wrapped, vec!["ThisIsAVeryLongWordThatExceedsMaxWidth"]);
+        assert_eq!(wrapped.concat(), text);
+        assert!(wrapped.iter().all(|line| line.width() <= 10));
     }
 
     #[test]
@@ -667,7 +711,8 @@ mod tests {
         // Test with single very long word
         let text = "Supercalifragilisticexpialidocious";
         let wrapped = wrap_text(text, 10);
-        assert_eq!(wrapped, vec!["Supercalifragilisticexpialidocious"]);
+        assert_eq!(wrapped.concat(), text);
+        assert!(wrapped.iter().all(|line| line.width() <= 10));
 
         // Test with exact width match
         let text = "Hello world";
@@ -690,7 +735,20 @@ mod tests {
         let text = "Supercalifragilisticexpialidocious";
         let bubble = get_speech_bubble_lines(text);
         assert!(bubble.len() >= 5);
-        assert!(bubble[0].len() >= 24); // Should accommodate the long word
+        let border_width = bubble[0].width();
+        assert!(
+            bubble[..bubble.len() - 2]
+                .iter()
+                .all(|line| line.width() == border_width)
+        );
+    }
+
+    #[test]
+    fn test_wrap_text_splits_long_unicode_word_by_display_width() {
+        let wrapped = wrap_text("初音ミク初音ミク初音ミク", 8);
+
+        assert!(wrapped.len() > 1);
+        assert!(wrapped.iter().all(|line| line.width() <= 8));
     }
 
     #[test]
@@ -793,11 +851,38 @@ mod tests {
         generate_gradient_cache(&mut config, &start, &end, 10);
         assert_eq!(config.color_cache.len(), 10);
 
-        // Check that first color is close to start
         let first_color = &config.color_cache[0];
-        // Check that last color is close to end
         let last_color = &config.color_cache[9];
-        assert_ne!(first_color, last_color);
+        assert_eq!(first_color.to_rgb(), start.to_rgb());
+        assert_eq!(last_color.to_rgb(), end.to_rgb());
+    }
+
+    #[test]
+    fn test_parse_color_args_reports_conflicts_without_exiting() {
+        let args = Args {
+            text: Some("test".to_string()),
+            style: None,
+            list: false,
+            rainbow: true,
+            saturation: 100,
+            brightness: 50,
+            color: Some("red".to_string()),
+            gradient: None,
+            no_color: false,
+            color_debug: false,
+        };
+
+        let error = parse_color_args(&args).unwrap_err();
+        assert_eq!(error.to_string(), "--rainbow cannot be used with --color");
+    }
+
+    #[test]
+    fn test_color_conversion_respects_terminal_mode() {
+        let red = Color::Rgb(255, 0, 0);
+        assert_eq!(red.to_ansi_fg(ColorMode::Truecolor), "\x1b[38;2;255;0;0m");
+        assert_eq!(red.to_ansi_fg(ColorMode::Ansi256), "\x1b[38;5;196m");
+        assert_eq!(red.to_ansi_fg(ColorMode::Ansi16), "\x1b[31m");
+        assert_eq!(red.to_ansi_fg(ColorMode::NoColor), "");
     }
 
     #[test]

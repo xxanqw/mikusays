@@ -74,8 +74,23 @@ brew install mikusays
 - **Windows**: `mikusays-windows-*.exe`
     - Small note for Windows that application depends on `vcredist2022`  
       (installing with scoop and installer resolve this dependency automatically)
-- **Linux**: `mikusays-linux-*` 
-- **macOS**: `mikusays-macos-*`
+- **Linux**: `mikusays-linux-*.tar.gz`
+- **macOS**: `mikusays-macos-*.tar.gz`
+
+Linux and macOS archives preserve the executable permission. Extract and run one with:
+
+```bash
+archive="mikusays-linux-x64-VERSION.tar.gz"
+tar -xzf "$archive"
+"./${archive%.tar.gz}" "Hello, World!"
+```
+
+The macOS binaries are currently unsigned. If Gatekeeper quarantines an extracted binary,
+remove the quarantine attribute before running it:
+
+```bash
+xattr -d com.apple.quarantine ./mikusays-macos-arm64-VERSION
+```
 
 Or build from source:
 ```bash
@@ -83,6 +98,17 @@ cargo build --release
 ```
 
 ## Development
+
+### Release automation
+
+Tagged releases build the platform binaries first, then trigger the Scoop bucket.
+After all DEB and RPM assets have uploaded, the package workflow triggers the APT/RPM
+repository with the exact tag. The `RELEASE_TOKEN` Actions secret must be able to create
+repository dispatch events in `xxanqw/scoop-bucket`, `xxanqw/homebrew-mikusays`, and
+`xxanqw/apt-repository`.
+
+The distribution repositories keep scheduled and manual workflows as recovery paths if
+an event dispatch fails.
 
 1. Fork repository
 2. Clone your fork

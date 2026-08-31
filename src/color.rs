@@ -301,14 +301,8 @@ fn hsl_to_rgb(h: u16, s: u8, l: u8) -> (u8, u8, u8) {
     let s = s as f32 / 100.0;
     let l = l as f32 / 100.0;
 
-    let r;
-    let g;
-    let b;
-
-    if s == 0.0 {
-        r = l;
-        g = l;
-        b = l;
+    let (r, g, b) = if s == 0.0 {
+        (l, l, l)
     } else {
         let hue_to_rgb = |p: f32, q: f32, t: f32| -> f32 {
             let mut t = t;
@@ -337,10 +331,12 @@ fn hsl_to_rgb(h: u16, s: u8, l: u8) -> (u8, u8, u8) {
         };
         let p = 2.0 * l - q;
 
-        r = hue_to_rgb(p, q, h + 1.0 / 3.0);
-        g = hue_to_rgb(p, q, h);
-        b = hue_to_rgb(p, q, h - 1.0 / 3.0);
-    }
+        (
+            hue_to_rgb(p, q, h + 1.0 / 3.0),
+            hue_to_rgb(p, q, h),
+            hue_to_rgb(p, q, h - 1.0 / 3.0),
+        )
+    };
 
     (
         (r * 255.0).round() as u8,
@@ -491,12 +487,6 @@ pub fn detect_windows_shell() -> Option<String> {
 #[allow(dead_code)]
 pub fn detect_windows_shell() -> Option<String> {
     None
-}
-
-/// Convert Color to a crossterm Color (helper for use across platforms)
-pub fn to_crossterm_color(color: &Color) -> crossterm::style::Color {
-    let (r, g, b) = color.to_rgb();
-    crossterm::style::Color::Rgb { r, g, b }
 }
 
 /// Detect the parent shell name on Windows, using the sysinfo crate.

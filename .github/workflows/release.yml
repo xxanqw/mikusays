@@ -113,10 +113,21 @@ jobs:
     
     - name: Prepare artifact
       run: |
-        mkdir -p artifacts
+        mkdir -p artifacts staging
         version="${{ needs.extract-version.outputs.version }}"
-        cp target/${{ matrix.target }}/release/mikusays artifacts/mikusays-linux-${{ matrix.arch }}-$version
-        chmod +x artifacts/mikusays-linux-${{ matrix.arch }}-$version
+        stem="mikusays-linux-${{ matrix.arch }}-$version"
+        cp target/${{ matrix.target }}/release/mikusays "staging/$stem"
+        chmod 755 "staging/$stem"
+        tar -C staging -czf "artifacts/$stem.tar.gz" "$stem"
+
+    - name: Verify artifact
+      run: |
+        version="${{ needs.extract-version.outputs.version }}"
+        stem="mikusays-linux-${{ matrix.arch }}-$version"
+        extract_dir="$(mktemp -d)"
+        tar -tzf "artifacts/$stem.tar.gz" | grep -Fx "$stem"
+        tar -xzf "artifacts/$stem.tar.gz" -C "$extract_dir"
+        test -x "$extract_dir/$stem"
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -150,10 +161,21 @@ jobs:
     
     - name: Prepare artifact
       run: |
-        mkdir -p artifacts
+        mkdir -p artifacts staging
         version="${{ needs.extract-version.outputs.version }}"
-        cp target/${{ matrix.target }}/release/mikusays artifacts/mikusays-macos-${{ matrix.arch }}-$version
-        chmod +x artifacts/mikusays-macos-${{ matrix.arch }}-$version
+        stem="mikusays-macos-${{ matrix.arch }}-$version"
+        cp target/${{ matrix.target }}/release/mikusays "staging/$stem"
+        chmod 755 "staging/$stem"
+        tar -C staging -czf "artifacts/$stem.tar.gz" "$stem"
+
+    - name: Verify artifact
+      run: |
+        version="${{ needs.extract-version.outputs.version }}"
+        stem="mikusays-macos-${{ matrix.arch }}-$version"
+        extract_dir="$(mktemp -d)"
+        tar -tzf "artifacts/$stem.tar.gz" | grep -Fx "$stem"
+        tar -xzf "artifacts/$stem.tar.gz" -C "$extract_dir"
+        test -x "$extract_dir/$stem"
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -179,7 +201,7 @@ jobs:
       run: ls -R artifacts
     
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
       with:
         files: artifacts/mikusays-*
         draft: false
@@ -195,33 +217,48 @@ jobs:
           ### Windows Installer
           - **Any**: `mikusays-windows-inst-any-${{ needs.extract-version.outputs.version }}.exe`
 
-          ### Linux (binary)
-          - **x64**: `mikusays-linux-x64-${{ needs.extract-version.outputs.version }}`
-          - **ARM64**: `mikusays-linux-arm64-${{ needs.extract-version.outputs.version }}`
+          ### Linux (tar.gz)
+          - **x64**: `mikusays-linux-x64-${{ needs.extract-version.outputs.version }}.tar.gz`
+          - **ARM64**: `mikusays-linux-arm64-${{ needs.extract-version.outputs.version }}.tar.gz`
 
           ### Debian Package
-          - **x64 Debian Package**: `mikusays-debian-x64-${{ needs.extract-version.outputs.version }}.deb`
-          - **ARM64 Debian Package**: `mikusays-debian-arm64-${{ needs.extract-version.outputs.version }}.deb`
+          - **x64 Debian Package**: `mikusays-debian-x86_64-${{ needs.extract-version.outputs.version }}.deb`
+          - **ARM64 Debian Package**: `mikusays-debian-aarch64-${{ needs.extract-version.outputs.version }}.deb`
 
           ### RedHat (RPM) Package
-          - **x64 RPM Package**: `mikusays-redhat-x64-${{ needs.extract-version.outputs.version }}.rpm`
-          - **ARM64 RPM Package**: `mikusays-redhat-arm64-${{ needs.extract-version.outputs.version }}.rpm`
+          - **x64 RPM Package**: `mikusays-redhat-x86_64-${{ needs.extract-version.outputs.version }}.rpm`
+          - **ARM64 RPM Package**: `mikusays-redhat-aarch64-${{ needs.extract-version.outputs.version }}.rpm`
 
           ### Repository for Debian / Ubuntu / Fedora / RHEL / CentOS
           Information on how to add it available here https://apt.xxanqw.pp.ua
           
-          ### macOS
-          - **Intel (x64)**: `mikusays-macos-x64-${{ needs.extract-version.outputs.version }}`
-          - **Apple Silicon (ARM64)**: `mikusays-macos-arm64-${{ needs.extract-version.outputs.version }}`
+          ### macOS (tar.gz)
+          - **Intel (x64)**: `mikusays-macos-x64-${{ needs.extract-version.outputs.version }}.tar.gz`
+          - **Apple Silicon (ARM64)**: `mikusays-macos-arm64-${{ needs.extract-version.outputs.version }}.tar.gz`
           
           ## Usage
           ```bash
-          # Download the appropriate binary for your platform
-          # On Unix-like systems, make it executable:
-          chmod +x mikusays-*
+          # Download and extract the appropriate archive on Linux/macOS:
+          archive="mikusays-linux-x64-${{ needs.extract-version.outputs.version }}.tar.gz"
+          tar -xzf "$archive"
           
           # Run the program:
-          ./mikusays-* "Hello, World!"
+          "./${archive%.tar.gz}" "Hello, World!"
+
+          # If Gatekeeper blocks an unsigned macOS binary:
+          xattr -d com.apple.quarantine "./${archive%.tar.gz}"
           ```
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Notify package managers
+      env:
+        GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        RELEASE_TAG: v${{ needs.extract-version.outputs.version }}
+      run: |
+        gh api --method POST repos/xxanqw/scoop-bucket/dispatches \
+          --raw-field event_type=new-release \
+          --field "client_payload[tag_name]=$RELEASE_TAG"
+        gh api --method POST repos/xxanqw/homebrew-mikusays/dispatches \
+          --raw-field event_type=new-release \
+          --field "client_payload[tag_name]=$RELEASE_TAG"

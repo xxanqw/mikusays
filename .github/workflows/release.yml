@@ -256,9 +256,10 @@ jobs:
         GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         RELEASE_TAG: v${{ needs.extract-version.outputs.version }}
       run: |
-        gh api --method POST repos/xxanqw/scoop-bucket/dispatches \
-          --raw-field event_type=new-release \
-          --field "client_payload[tag_name]=$RELEASE_TAG"
-        gh api --method POST repos/xxanqw/homebrew-mikusays/dispatches \
-          --raw-field event_type=new-release \
-          --field "client_payload[tag_name]=$RELEASE_TAG"
+        for repository in xxanqw/scoop-bucket xxanqw/homebrew-mikusays; do
+          if ! gh api --method POST "repos/$repository/dispatches" \
+            --raw-field event_type=new-release \
+            --field "client_payload[tag_name]=$RELEASE_TAG"; then
+            echo "::warning::Could not dispatch $repository; its four-hour schedule will pick up the release. Check RELEASE_TOKEN if immediate updates are required."
+          fi
+        done

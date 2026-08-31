@@ -37,7 +37,7 @@ jobs:
         id: get_tag
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           $TAG = "${{ inputs.tag_name }}"
           if (-not $TAG) { $TAG = "${{ github.event.release.tag_name }}" }
@@ -57,7 +57,7 @@ jobs:
 
       - name: Download Release Assets
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           $TAG = "${{ steps.get_tag.outputs.tag }}"
           $Version = "${{ steps.get_version.outputs.version }}"
@@ -268,7 +268,7 @@ jobs:
 
       - name: Upload Installer to Release
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           $TAG = "${{ steps.get_tag.outputs.tag }}"
           $Version = "${{ steps.get_version.outputs.version }}"

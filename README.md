@@ -105,7 +105,9 @@ Tagged releases build the platform binaries first, then trigger the Scoop bucket
 After all DEB and RPM assets have uploaded, the package workflow triggers the APT/RPM
 repository with the exact tag. The `RELEASE_TOKEN` Actions secret must be able to create
 repository dispatch events in `xxanqw/scoop-bucket`, `xxanqw/homebrew-mikusays`, and
-`xxanqw/apt-repository`.
+`xxanqw/apt-repository`. If that token expires, the release remains successful and the
+downstream repositories recover through their scheduled update workflows. Uploads to the
+MikuSays release itself use the built-in workflow token and do not depend on this secret.
 
 The distribution repositories keep scheduled and manual workflows as recovery paths if
 an event dispatch fails.

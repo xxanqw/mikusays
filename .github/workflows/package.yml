@@ -66,7 +66,7 @@ jobs:
       - name: Upload to release
         if: github.event_name == 'release' || github.event.inputs.release_tag
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name || github.event.inputs.release_tag }}
         run: |
           install -m 0644 "${{ steps.find-deb.outputs.path }}" \
@@ -140,7 +140,7 @@ jobs:
       - name: Upload to release
         if: github.event_name == 'release' || github.event.inputs.release_tag
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name || github.event.inputs.release_tag }}
         run: |
           install -m 0644 "${{ steps.find-rpm.outputs.path }}" \
@@ -163,6 +163,8 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           RELEASE_TAG: ${{ github.event.release.tag_name || github.event.inputs.release_tag }}
         run: |
-          gh api --method POST repos/xxanqw/apt-repository/dispatches \
+          if ! gh api --method POST repos/xxanqw/apt-repository/dispatches \
             --raw-field event_type=new-release \
-            --field "client_payload[tag_name]=$RELEASE_TAG"
+            --field "client_payload[tag_name]=$RELEASE_TAG"; then
+            echo "::warning::Could not dispatch apt-repository; its daily schedule will publish the release. Check RELEASE_TOKEN if immediate updates are required."
+          fi

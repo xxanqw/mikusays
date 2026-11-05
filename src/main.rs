@@ -3,6 +3,7 @@ use clap::{CommandFactory, Parser};
 use crossterm::QueueableCommand;
 use crossterm::style::{Print, ResetColor};
 use crossterm::terminal::size;
+use rand::seq::IndexedRandom;
 use std::error::Error;
 use std::fmt;
 use std::io::{Write, stdout};
@@ -26,7 +27,7 @@ pub struct Args {
     #[arg(long)]
     pub teto: bool,
 
-    /// Style of the selected character. A random one is chosen if not specified
+    /// Style of the selected character. Otherwise, randomly choose one that fits the terminal
     #[arg(short, long, value_parser = clap::value_parser!(i32).range(0..))]
     pub style: Option<i32>,
 
@@ -180,10 +181,15 @@ pub fn parse_color_args(args: &Args) -> Result<ColorConfig, ColorConfigError> {
 }
 
 pub fn get_speech_bubble_lines(text: &str) -> Vec<String> {
-    const MAX_BUBBLE_WIDTH: usize = 50;
-    const MIN_BUBBLE_WIDTH: usize = 20;
+    speech_bubble_lines_with_width(text, 52)
+}
 
-    let temp_lines = wrap_text(text, MAX_BUBBLE_WIDTH - 4);
+fn speech_bubble_lines_with_width(text: &str, terminal_width: usize) -> Vec<String> {
+    // Two border columns and four columns of inner padding.
+    let max_bubble_width = terminal_width.saturating_sub(2).clamp(5, 50);
+    let min_bubble_width = 20.min(max_bubble_width);
+
+    let temp_lines = wrap_text(text, max_bubble_width - 4);
 
     let content_width = temp_lines
         .iter()
@@ -191,7 +197,7 @@ pub fn get_speech_bubble_lines(text: &str) -> Vec<String> {
         .max()
         .unwrap_or(0);
 
-    let bubble_width = (content_width + 4).clamp(MIN_BUBBLE_WIDTH, MAX_BUBBLE_WIDTH);
+    let bubble_width = (content_width + 4).clamp(min_bubble_width, max_bubble_width);
 
     let lines = wrap_text(text, bubble_width - 4);
     let mut bubble_lines = Vec::new();
@@ -404,14 +410,86 @@ fn list_all_art_styles(teto: bool) {
     println!("  --gradient red:blue      Custom gradient");
 }
 
+// Shared by selection and rendering so padding and the speech bubble count toward fit.
+#[derive(Debug)]
+struct ArtLayout {
+    art_padding: usize,
+    bubble_padding: usize,
+    tail_pos: usize,
+    width: usize,
+    height: usize,
+}
+
+fn art_layout(bubble: &[String], art: &[&str], terminal_width: usize) -> ArtLayout {
+    let bubble_width = bubble.first().map_or(0, |line| line.width());
+    let art_width = art.iter().map(|line| line.width()).max().unwrap_or(0);
+    let tail_pos = art.first().map_or(0, |line| {
+        let whitespace = line.trim_start_matches(char::is_whitespace);
+        line[..line.len() - whitespace.len()].width()
+    });
+    let tail_width = bubble
+        .iter()
+        .rev()
+        .take(2)
+        .map(|line| line.width())
+        .max()
+        .unwrap_or(0);
+    let bubble_offset = tail_pos.saturating_sub(bubble_width / 2);
+    let width = art_width
+        .max(bubble_offset + bubble_width)
+        .max(tail_pos + tail_width);
+    let art_padding = terminal_width.saturating_sub(width) / 2;
+    ArtLayout {
+        art_padding,
+        bubble_padding: art_padding + bubble_offset,
+        tail_pos,
+        width,
+        height: bubble.len() + art.len(),
+    }
+}
+
+fn select_art(
+    style: i32,
+    teto: bool,
+    bubble: &[String],
+    terminal: (u16, u16),
+) -> Option<Vec<&'static str>> {
+    // Explicit --style is an intentional override, even on a tiny terminal.
+    if style >= 0 {
+        return Some(get_character_art(Some(style), None, teto));
+    }
+    let count = get_character_art(None, Some(true), teto).len();
+    let candidates: Vec<_> = (0..count)
+        .map(|index| get_character_art(Some(index as i32), None, teto))
+        .filter(|art| {
+            let layout = art_layout(bubble, art, terminal.0 as usize);
+            layout.width <= terminal.0 as usize && layout.height <= terminal.1 as usize
+        })
+        .collect();
+    candidates.choose(&mut rand::rng()).cloned()
+}
+
 fn draw_character_says(
     text: &str,
     style: i32,
     teto: bool,
     color_config: &mut ColorConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let speech_bubble_lines = get_speech_bubble_lines(text);
-    let character_art = get_character_art(Some(style), None, teto);
+    let terminal = size()?;
+    let available_width = terminal.0 as usize;
+    let available_height = terminal.1 as usize;
+    let speech_bubble_lines = if style >= 0 {
+        get_speech_bubble_lines(text)
+    } else {
+        speech_bubble_lines_with_width(text, available_width)
+    };
+    let Some(character_art) = select_art(style, teto, &speech_bubble_lines, terminal) else {
+        // Nothing fits: preserve the message without an orphaned speech tail or artwork.
+        for line in wrap_text(text, available_width.max(1)) {
+            println!("{line}");
+        }
+        return Ok(());
+    };
 
     // Distribute colors across characters that are actually colored.
     let total_chars: usize = character_art
@@ -430,45 +508,15 @@ fn draw_character_says(
         generate_gradient_cache(color_config, &start, &end, total_chars);
     }
 
-    let (window_width, window_height) = size()?;
-    let available_width = window_width as usize;
-
-    let mut all_content_lines = Vec::new();
-    all_content_lines.extend(speech_bubble_lines.clone());
-    all_content_lines.extend(character_art.iter().map(|s| s.to_string()));
-
-    let max_content_width = all_content_lines
-        .iter()
-        .map(|l| l.width())
-        .max()
-        .unwrap_or(0);
-
-    let overall_left_padding = if available_width > max_content_width {
-        (available_width - max_content_width) / 2
-    } else {
-        0
-    };
-
-    let bubble_width = speech_bubble_lines
-        .first()
-        .map(|line| line.width())
-        .unwrap_or(0);
-
-    let first_art_line = character_art.first().unwrap_or(&"");
-    let tail_pos = first_art_line
-        .chars()
-        .position(|c| !c.is_whitespace())
-        .unwrap_or(0);
-
-    let bubble_center = bubble_width / 2;
-    let art_tail_absolute_pos = overall_left_padding + tail_pos;
-
-    let bubble_left_padding = art_tail_absolute_pos.saturating_sub(bubble_center);
-
+    let layout = art_layout(&speech_bubble_lines, &character_art, available_width);
+    let overall_left_padding = layout.art_padding;
+    let bubble_left_padding = layout.bubble_padding;
+    let tail_pos = layout.tail_pos;
     let bubble_line_count = speech_bubble_lines.len();
+    let content_height = layout.height;
 
-    let content_height = all_content_lines.len();
-    let available_height = window_height as usize;
+    let mut all_content_lines = speech_bubble_lines;
+    all_content_lines.extend(character_art.iter().map(|s| s.to_string()));
 
     let top_padding = if content_height < available_height {
         (available_height - content_height) / 2
@@ -606,6 +654,66 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
     use crate::color::{Color, ColorMode};
+
+    #[test]
+    fn random_art_fits_both_collections_and_full_message() {
+        for teto in [false, true] {
+            for terminal in [(80, 24), (120, 40), (200, 100)] {
+                for text in ["Hello", &"初音ミク hello ".repeat(50)] {
+                    let bubble = speech_bubble_lines_with_width(text, terminal.0 as usize);
+                    let fitting: Vec<_> = (0..get_character_art(None, Some(true), teto).len())
+                        .map(|index| get_character_art(Some(index as i32), None, teto))
+                        .filter(|art| {
+                            let layout = art_layout(&bubble, art, terminal.0 as usize);
+                            layout.width <= terminal.0 as usize
+                                && layout.height <= terminal.1 as usize
+                        })
+                        .collect();
+                    for _ in 0..20 {
+                        let selected = select_art(-1, teto, &bubble, terminal);
+                        assert_eq!(selected.is_none(), fitting.is_empty());
+                        if let Some(art) = selected {
+                            assert!(fitting.contains(&art));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn tiny_terminal_omits_random_art_but_explicit_style_overrides() {
+        let bubble = get_speech_bubble_lines("Hello");
+        for teto in [false, true] {
+            assert!(select_art(-1, teto, &bubble, (5, 3)).is_none());
+            assert_eq!(
+                select_art(19, teto, &bubble, (5, 3)).unwrap(),
+                get_character_art(Some(19), None, teto)
+            );
+        }
+    }
+
+    #[test]
+    fn layout_counts_unicode_width_bubble_offset_and_exact_boundaries() {
+        let bubble = get_speech_bubble_lines("Hello");
+        let art = ["                              界", "初音ミク"];
+        let layout = art_layout(&bubble, &art, 41);
+        // The art alone is 32 columns, but the bubble extends to column 41.
+        assert_eq!(layout.width, 41);
+        assert_eq!(layout.height, bubble.len() + 2);
+        assert_eq!(layout.art_padding, 0);
+        assert_eq!(layout.bubble_padding + bubble[0].width(), 41);
+        assert_eq!(art_layout(&bubble, &["界  x"], 80).tail_pos, 0);
+        assert_eq!(art_layout(&bubble, &["　x"], 80).tail_pos, 2);
+    }
+
+    #[test]
+    fn speech_bubble_wraps_to_narrow_terminal_display_width() {
+        for width in [10, 22, 40, 80] {
+            let bubble = speech_bubble_lines_with_width("初音ミク Hello world verylongword", width);
+            assert!(bubble.iter().all(|line| line.width() <= width));
+        }
+    }
 
     #[test]
     fn test_wrap_text_basic() {

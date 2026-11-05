@@ -25,7 +25,7 @@ Arguments:
   [TEXT]  Text to display in the speech bubble
 
 Options:
-  -s, --style <STYLE>            Style of the selected character. A random one is chosen if not specified
+  -s, --style <STYLE>            Style of the selected character. Otherwise, randomly choose one that fits the terminal
   -l, --list                     List all available art styles with their indices
       --teto                     Use the separate Kasane Teto art collection instead of Miku
       --rainbow                  Apply a smooth rainbow gradient across the ASCII art
@@ -37,6 +37,14 @@ Options:
   -h, --help                     Print help
   -V, --version                  Print version
 ```
+
+### Terminal-aware selection
+
+Without `--style`, mikusays randomly chooses only artwork that fits the terminal's
+width and height together with the speech bubble. The bubble wraps to the available
+width. If no artwork fits, only the wrapped message is printed. An explicit
+`--style <number>` always displays that artwork, even if it exceeds the terminal size.
+`--list` still shows every style.
 
 ### Kasane Teto
 

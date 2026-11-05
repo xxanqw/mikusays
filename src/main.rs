@@ -1,26 +1,134 @@
 use clap::error::ErrorKind;
-use clap::{CommandFactory, Parser};
+use clap::{CommandFactory, Parser, ValueEnum};
 use crossterm::QueueableCommand;
 use crossterm::style::{Print, ResetColor};
 use crossterm::terminal::size;
+use rand::seq::IndexedRandom;
 use std::error::Error;
 use std::fmt;
-use std::io::{Write, stdout};
+use std::io::{IsTerminal, Read, Write, stdin, stdout};
+use std::path::PathBuf;
 use std::str::FromStr;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 mod color;
+mod config;
+mod configure;
 mod mikuart;
+mod tetoart;
 use color::{Color, ColorMode, detect_color_mode, lerp_color_hsv};
 use mikuart::get_miku_art;
+use tetoart::get_teto_art;
 
-#[derive(Parser)]
-#[command(version, about, long_about = None)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum Character {
+    Miku,
+    Teto,
+    Random,
+}
+impl Character {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Miku => "miku",
+            Self::Teto => "teto",
+            Self::Random => "random",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub enum Align {
+    Left,
+    #[default]
+    Center,
+    Right,
+}
+impl Align {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Left => "left",
+            Self::Center => "center",
+            Self::Right => "right",
+        }
+    }
+    fn padding(self, available: usize, width: usize) -> usize {
+        let space = available.saturating_sub(width);
+        match self {
+            Self::Left => 0,
+            Self::Center => space / 2,
+            Self::Right => space,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ArtSize {
+    Small,
+    Medium,
+    Large,
+}
+impl ArtSize {
+    fn of(art: &[&str]) -> Self {
+        let width = art.iter().map(|line| line.width()).max().unwrap_or(0);
+        if width <= 40 && art.len() <= 20 {
+            Self::Small
+        } else if width <= 80 && art.len() <= 40 {
+            Self::Medium
+        } else {
+            Self::Large
+        }
+    }
+}
+
+#[derive(Parser, Default, Clone)]
+#[command(version, about, long_about = None, args_override_self = true)]
 pub struct Args {
-    /// Text to display in the speech bubble
+    /// Text to display; read piped stdin when omitted
     pub text: Option<String>,
 
-    /// Style of the Miku art. A random one is chosen if not specified
+    /// Use the separate Kasane Teto art collection instead of Miku
+    #[arg(long, conflicts_with = "character")]
+    pub teto: bool,
+
+    /// Character collection, or random selection across both collections
+    #[arg(long, value_enum, conflicts_with = "art")]
+    pub character: Option<Character>,
+
+    /// Randomly choose a small artwork (at most 40 columns and 20 lines)
+    #[arg(long, conflicts_with_all = ["medium", "large"])]
+    pub small: bool,
+    /// Randomly choose a medium artwork (at most 80 columns and 40 lines, not small)
+    #[arg(long, conflicts_with = "large")]
+    pub medium: bool,
+    /// Randomly choose a large artwork (over 80 columns or 40 lines)
+    #[arg(long)]
+    pub large: bool,
+    /// Use a thought bubble with circles instead of a speech tail
+    #[arg(long)]
+    pub think: bool,
+    /// Horizontal alignment of the entire drawing
+    #[arg(long, value_enum, default_value = "center")]
+    pub align: Align,
+    /// Display a custom UTF-8 artwork, even if it does not fit
+    #[arg(long, conflicts_with_all = ["style", "teto", "list"])]
+    pub art: Option<PathBuf>,
+    /// Exclude indices from random selection (comma-separated, applies to each collection)
+    #[arg(long, value_delimiter = ',', value_parser = clap::value_parser!(i32).range(0..))]
+    pub exclude_styles: Vec<i32>,
+    /// Load defaults from a file (one option per line)
+    #[arg(long, conflicts_with = "no_config")]
+    pub config: Option<PathBuf>,
+    /// Ignore the automatic configuration file
+    #[arg(long)]
+    pub no_config: bool,
+    /// Save effective options as a configuration file and exit
+    #[arg(long)]
+    pub save_config: Option<PathBuf>,
+    /// Open the interactive configuration editor (arrow keys, preview, save/load)
+    #[arg(long, conflicts_with_all = ["list", "save_config", "color_debug"])]
+    pub configure: bool,
+
+    /// Style of the selected character. Otherwise, randomly choose one that fits the terminal
     #[arg(short, long, value_parser = clap::value_parser!(i32).range(0..))]
     pub style: Option<i32>,
 
@@ -174,10 +282,15 @@ pub fn parse_color_args(args: &Args) -> Result<ColorConfig, ColorConfigError> {
 }
 
 pub fn get_speech_bubble_lines(text: &str) -> Vec<String> {
-    const MAX_BUBBLE_WIDTH: usize = 50;
-    const MIN_BUBBLE_WIDTH: usize = 20;
+    speech_bubble_lines_with_width(text, 52)
+}
 
-    let temp_lines = wrap_text(text, MAX_BUBBLE_WIDTH - 4);
+fn speech_bubble_lines_with_width(text: &str, terminal_width: usize) -> Vec<String> {
+    // Two border columns and four columns of inner padding.
+    let max_bubble_width = terminal_width.saturating_sub(2).clamp(5, 50);
+    let min_bubble_width = 20.min(max_bubble_width);
+
+    let temp_lines = wrap_text(text, max_bubble_width - 4);
 
     let content_width = temp_lines
         .iter()
@@ -185,7 +298,7 @@ pub fn get_speech_bubble_lines(text: &str) -> Vec<String> {
         .max()
         .unwrap_or(0);
 
-    let bubble_width = (content_width + 4).clamp(MIN_BUBBLE_WIDTH, MAX_BUBBLE_WIDTH);
+    let bubble_width = (content_width + 4).clamp(min_bubble_width, max_bubble_width);
 
     let lines = wrap_text(text, bubble_width - 4);
     let mut bubble_lines = Vec::new();
@@ -234,6 +347,19 @@ pub fn get_speech_bubble_lines(text: &str) -> Vec<String> {
 }
 
 pub fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
+    if text.contains('\n') {
+        return text
+            .split('\n')
+            .flat_map(|line| {
+                let wrapped = wrap_text(line.trim_end_matches('\r'), max_width);
+                if wrapped.is_empty() {
+                    vec![String::new()]
+                } else {
+                    wrapped
+                }
+            })
+            .collect();
+    }
     if max_width == 0 {
         return if text.is_empty() {
             Vec::new()
@@ -353,18 +479,27 @@ pub fn generate_gradient_cache(
     }
 }
 
-fn list_all_art_styles() {
-    println!("Available Miku art styles:");
+fn get_character_art(style: Option<i32>, list: Option<bool>, teto: bool) -> Vec<&'static str> {
+    if teto {
+        get_teto_art(style, list)
+    } else {
+        get_miku_art(style, list)
+    }
+}
+
+fn list_all_art_styles(teto: bool) {
+    let character = if teto { "Teto" } else { "Miku" };
+    println!("Available {character} art styles:");
     println!("==========================");
 
     // Get all art styles to determine the count
-    let all_art = get_miku_art(None, Some(true));
+    let all_art = get_character_art(None, Some(true), teto);
     let styles_count = all_art.len();
     println!("Total styles: {}", styles_count);
 
     for i in 0..styles_count {
         println!("\n--- Style {} ---", i);
-        let art = get_miku_art(Some(i as i32), Some(false));
+        let art = get_character_art(Some(i as i32), Some(false), teto);
         for line in art {
             println!("{}", line);
         }
@@ -389,16 +524,146 @@ fn list_all_art_styles() {
     println!("  --gradient red:blue      Custom gradient");
 }
 
-fn draw_miku_says(
-    text: &str,
+// Shared by selection and rendering so padding and the speech bubble count toward fit.
+#[derive(Debug)]
+struct ArtLayout {
+    art_padding: usize,
+    bubble_padding: usize,
+    tail_pos: usize,
+    width: usize,
+    height: usize,
+}
+
+fn art_layout(bubble: &[String], art: &[&str], terminal_width: usize) -> ArtLayout {
+    let bubble_width = bubble.first().map_or(0, |line| line.width());
+    let art_width = art.iter().map(|line| line.width()).max().unwrap_or(0);
+    let tail_pos = art.first().map_or(0, |line| {
+        let whitespace = line.trim_start_matches(char::is_whitespace);
+        line[..line.len() - whitespace.len()].width()
+    });
+    // If the artwork starts near the left edge, move the tail right rather than
+    // clamping only the bubble's left edge and detaching its tail from the center.
+    let tail_pos = tail_pos.max(bubble_width / 2);
+    let tail_width = bubble
+        .iter()
+        .rev()
+        .take(2)
+        .map(|line| line.width())
+        .max()
+        .unwrap_or(0);
+    let bubble_offset = tail_pos.saturating_sub(bubble_width / 2);
+    let width = art_width
+        .max(bubble_offset + bubble_width)
+        .max(tail_pos + tail_width);
+    let art_padding = terminal_width.saturating_sub(width) / 2;
+    ArtLayout {
+        art_padding,
+        bubble_padding: art_padding + bubble_offset,
+        tail_pos,
+        width,
+        height: bubble.len() + art.len(),
+    }
+}
+
+#[cfg(test)]
+fn select_art(
     style: i32,
+    teto: bool,
+    bubble: &[String],
+    terminal: (u16, u16),
+) -> Option<Vec<&'static str>> {
+    choose_art(
+        &Args {
+            style: (style >= 0).then_some(style),
+            teto,
+            ..Default::default()
+        },
+        bubble,
+        terminal,
+    )
+}
+
+fn choose_art(args: &Args, bubble: &[String], terminal: (u16, u16)) -> Option<Vec<&'static str>> {
+    let characters: &[bool] = match args.character {
+        Some(Character::Random) => &[false, true],
+        Some(Character::Teto) => &[true],
+        Some(Character::Miku) => &[false],
+        None if args.teto => &[true],
+        None => &[false],
+    };
+    let requested_size = if args.small {
+        Some(ArtSize::Small)
+    } else if args.medium {
+        Some(ArtSize::Medium)
+    } else if args.large {
+        Some(ArtSize::Large)
+    } else {
+        None
+    };
+    let mut candidates = Vec::new();
+    for &teto in characters {
+        let count = get_character_art(None, Some(true), teto).len();
+        for index in 0..count {
+            if let Some(style) = args.style {
+                if index == style as usize {
+                    candidates.push(get_character_art(Some(style), None, teto));
+                }
+                continue;
+            }
+            if args.exclude_styles.contains(&(index as i32)) {
+                continue;
+            }
+            let art = get_character_art(Some(index as i32), None, teto);
+            if requested_size.is_some_and(|size| ArtSize::of(&art) != size) {
+                continue;
+            }
+            let layout = art_layout(bubble, &art, terminal.0 as usize);
+            if layout.width <= terminal.0 as usize && layout.height <= terminal.1 as usize {
+                candidates.push(art);
+            }
+        }
+    }
+    candidates.choose(&mut rand::rng()).cloned()
+}
+
+fn draw_character_says(
+    text: &str,
+    args: &Args,
+    custom_art: Option<&str>,
     color_config: &mut ColorConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let speech_bubble_lines = get_speech_bubble_lines(text);
-    let miku_art = get_miku_art(Some(style), None);
+    // Pipes and CI may not have a terminal to query.
+    let terminal = size().unwrap_or((80, 24));
+    let available_width = terminal.0 as usize;
+    let available_height = terminal.1 as usize;
+    let mut speech_bubble_lines = if args.style.is_some() || custom_art.is_some() {
+        get_speech_bubble_lines(text)
+    } else {
+        speech_bubble_lines_with_width(text, available_width)
+    };
+    if args.think {
+        let count = speech_bubble_lines.len();
+        speech_bubble_lines[count - 2] = "o".into();
+        speech_bubble_lines[count - 1] = " o".into();
+    }
+    let character_art = if let Some(art) = custom_art {
+        Some(art.lines().collect())
+    } else {
+        choose_art(args, &speech_bubble_lines, terminal)
+    };
+    let Some(character_art) = character_art else {
+        // Nothing fits: preserve the message without an orphaned speech tail or artwork.
+        for line in wrap_text(text, available_width.max(1)) {
+            println!(
+                "{}{line}",
+                " ".repeat(args.align.padding(available_width, line.width()))
+            );
+        }
+        return Ok(());
+    };
 
     // Distribute colors across characters that are actually colored.
-    let total_chars: usize = miku_art
+    let total_chars: usize = character_art
         .iter()
         .map(|line| {
             line.chars()
@@ -414,45 +679,18 @@ fn draw_miku_says(
         generate_gradient_cache(color_config, &start, &end, total_chars);
     }
 
-    let (window_width, window_height) = size()?;
-    let available_width = window_width as usize;
-
-    let mut all_content_lines = Vec::new();
-    all_content_lines.extend(speech_bubble_lines.clone());
-    all_content_lines.extend(miku_art.iter().map(|s| s.to_string()));
-
-    let max_content_width = all_content_lines
-        .iter()
-        .map(|l| l.width())
-        .max()
-        .unwrap_or(0);
-
-    let overall_left_padding = if available_width > max_content_width {
-        (available_width - max_content_width) / 2
-    } else {
-        0
-    };
-
-    let bubble_width = speech_bubble_lines
-        .first()
-        .map(|line| line.width())
-        .unwrap_or(0);
-
-    let first_miku_line = miku_art.first().unwrap_or(&"");
-    let tail_pos = first_miku_line
-        .chars()
-        .position(|c| !c.is_whitespace())
-        .unwrap_or(0);
-
-    let bubble_center = bubble_width / 2;
-    let miku_tail_absolute_pos = overall_left_padding + tail_pos;
-
-    let bubble_left_padding = miku_tail_absolute_pos.saturating_sub(bubble_center);
-
+    let mut layout = art_layout(&speech_bubble_lines, &character_art, available_width);
+    let aligned_padding = args.align.padding(available_width, layout.width);
+    layout.bubble_padding = layout.bubble_padding - layout.art_padding + aligned_padding;
+    layout.art_padding = aligned_padding;
+    let overall_left_padding = layout.art_padding;
+    let bubble_left_padding = layout.bubble_padding;
+    let tail_pos = layout.tail_pos;
     let bubble_line_count = speech_bubble_lines.len();
+    let content_height = layout.height;
 
-    let content_height = all_content_lines.len();
-    let available_height = window_height as usize;
+    let mut all_content_lines = speech_bubble_lines;
+    all_content_lines.extend(character_art.iter().map(|s| s.to_string()));
 
     let top_padding = if content_height < available_height {
         (available_height - content_height) / 2
@@ -484,7 +722,7 @@ fn draw_miku_says(
         } else {
             let horizontal_padding = " ".repeat(overall_left_padding);
 
-            // Apply coloring to Miku art lines
+            // Apply coloring to character art lines
             if color_config.mode != ColorMode::NoColor && !color_config.color_cache.is_empty() {
                 // Use crossterm queueing to color characters so it's platform-agnostic
                 let mut stdout = stdout();
@@ -533,32 +771,40 @@ fn draw_miku_says(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
+    let args = config::parse().unwrap_or_else(|error| {
+        Args::command()
+            .error(ErrorKind::ValueValidation, error.to_string())
+            .exit()
+    });
 
+    if args.configure {
+        return configure::run(args);
+    }
     if args.list {
-        list_all_art_styles();
+        if args.character == Some(Character::Random) {
+            list_all_art_styles(false);
+            list_all_art_styles(true);
+        } else {
+            list_all_art_styles(args.teto || args.character == Some(Character::Teto));
+        }
         return Ok(());
     }
 
-    let text = args.text.clone().unwrap_or_else(|| {
-        eprintln!("Error: Text is required when not using --list");
-        std::process::exit(1);
-    });
-
-    let styles_count = get_miku_art(None, Some(true)).len();
-    let style = match args.style {
-        Some(style) if style as usize >= styles_count => Args::command()
-            .error(
-                ErrorKind::InvalidValue,
-                format!(
-                    "style {style} does not exist; choose a value between 0 and {}",
-                    styles_count - 1
-                ),
-            )
-            .exit(),
-        Some(style) => style,
-        None => -1,
-    };
+    let teto = args.teto || args.character == Some(Character::Teto);
+    let styles_count = get_character_art(None, Some(true), teto).len();
+    for style in args.style.iter().chain(args.exclude_styles.iter()) {
+        if *style as usize >= styles_count {
+            Args::command()
+                .error(
+                    ErrorKind::InvalidValue,
+                    format!(
+                        "style {style} does not exist; choose a value between 0 and {}",
+                        styles_count - 1
+                    ),
+                )
+                .exit();
+        }
+    }
 
     // Parse color-related arguments
     let mut color_config = parse_color_args(&args).unwrap_or_else(|error| {
@@ -580,7 +826,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    draw_miku_says(&text, style, &mut color_config)?;
+    if let Some(path) = &args.save_config {
+        config::save(&args, path)?;
+        println!("Saved configuration to {}", path.display());
+        return Ok(());
+    }
+    let text = if let Some(text) = &args.text {
+        text.clone()
+    } else {
+        let mut text = String::new();
+        if !stdin().is_terminal() {
+            stdin().read_to_string(&mut text)?;
+        }
+        if text.trim().is_empty() {
+            eprintln!(
+                "Error: Text is required when not using --list; pass TEXT or pipe text on stdin"
+            );
+            std::process::exit(1);
+        }
+        text.trim_end_matches(['\r', '\n']).to_string()
+    };
+    let custom_art = args
+        .art
+        .as_ref()
+        .map(|path| {
+            std::fs::read_to_string(path)
+                .map_err(|error| format!("cannot read artwork {}: {error}", path.display()))
+        })
+        .transpose()?;
+    if custom_art.as_ref().is_some_and(|art| art.trim().is_empty()) {
+        Args::command()
+            .error(ErrorKind::ValueValidation, "custom artwork is empty")
+            .exit();
+    }
+    draw_character_says(&text, &args, custom_art.as_deref(), &mut color_config)?;
 
     Ok(())
 }
@@ -590,6 +869,154 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
     use crate::color::{Color, ColorMode};
+
+    #[test]
+    fn size_filters_and_exclusions_apply_only_to_random_selection() {
+        let bubble = get_speech_bubble_lines("hello");
+        for teto in [false, true] {
+            for (small, medium, large, expected) in [
+                (true, false, false, ArtSize::Small),
+                (false, true, false, ArtSize::Medium),
+                (false, false, true, ArtSize::Large),
+            ] {
+                let args = Args {
+                    teto,
+                    small,
+                    medium,
+                    large,
+                    ..Default::default()
+                };
+                let count = get_character_art(None, Some(true), teto).len();
+                let exists = (0..count).any(|index| {
+                    ArtSize::of(&get_character_art(Some(index as i32), None, teto)) == expected
+                });
+                for _ in 0..10 {
+                    let art = choose_art(&args, &bubble, (1000, 1000));
+                    assert_eq!(art.is_some(), exists);
+                    if let Some(art) = art {
+                        assert_eq!(ArtSize::of(&art), expected);
+                    }
+                }
+            }
+            let mut args = Args {
+                teto,
+                exclude_styles: (0..20).collect(),
+                ..Default::default()
+            };
+            assert!(choose_art(&args, &bubble, (1000, 1000)).is_none());
+            args.exclude_styles.retain(|index| *index != 7);
+            assert_eq!(
+                choose_art(&args, &bubble, (1000, 1000)).unwrap(),
+                get_character_art(Some(7), None, teto)
+            );
+            args.style = Some(19);
+            args.small = true;
+            assert_eq!(
+                choose_art(&args, &bubble, (1, 1)).unwrap(),
+                get_character_art(Some(19), None, teto)
+            );
+        }
+    }
+
+    #[test]
+    fn size_classification_uses_display_columns_and_line_count() {
+        assert_eq!(ArtSize::of(&["界".repeat(20).as_str()]), ArtSize::Small);
+        assert_eq!(ArtSize::of(&["界".repeat(21).as_str()]), ArtSize::Medium);
+        assert_eq!(ArtSize::of(&["x"; 21]), ArtSize::Medium);
+        assert_eq!(ArtSize::of(&["x"; 41]), ArtSize::Large);
+        assert_eq!(ArtSize::of(&["x".repeat(81).as_str()]), ArtSize::Large);
+    }
+
+    #[test]
+    fn wrapping_preserves_stdin_paragraphs() {
+        assert_eq!(
+            wrap_text("hello\n\nworld\r\nbye", 20),
+            ["hello", "", "world", "bye"]
+        );
+    }
+
+    #[test]
+    fn random_art_fits_both_collections_and_full_message() {
+        for teto in [false, true] {
+            for terminal in [(80, 24), (120, 40), (200, 100)] {
+                for text in ["Hello", &"初音ミク hello ".repeat(50)] {
+                    let bubble = speech_bubble_lines_with_width(text, terminal.0 as usize);
+                    let fitting: Vec<_> = (0..get_character_art(None, Some(true), teto).len())
+                        .map(|index| get_character_art(Some(index as i32), None, teto))
+                        .filter(|art| {
+                            let layout = art_layout(&bubble, art, terminal.0 as usize);
+                            layout.width <= terminal.0 as usize
+                                && layout.height <= terminal.1 as usize
+                        })
+                        .collect();
+                    for _ in 0..20 {
+                        let selected = select_art(-1, teto, &bubble, terminal);
+                        assert_eq!(selected.is_none(), fitting.is_empty());
+                        if let Some(art) = selected {
+                            assert!(fitting.contains(&art));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn tiny_terminal_omits_random_art_but_explicit_style_overrides() {
+        let bubble = get_speech_bubble_lines("Hello");
+        for teto in [false, true] {
+            assert!(select_art(-1, teto, &bubble, (5, 3)).is_none());
+            assert_eq!(
+                select_art(19, teto, &bubble, (5, 3)).unwrap(),
+                get_character_art(Some(19), None, teto)
+            );
+        }
+    }
+
+    #[test]
+    fn layout_counts_unicode_width_bubble_offset_and_exact_boundaries() {
+        let bubble = get_speech_bubble_lines("Hello");
+        let art = ["                              界", "初音ミク"];
+        let layout = art_layout(&bubble, &art, 41);
+        // The art alone is 32 columns, but the bubble extends to column 41.
+        assert_eq!(layout.width, 41);
+        assert_eq!(layout.height, bubble.len() + 2);
+        assert_eq!(layout.art_padding, 0);
+        assert_eq!(layout.bubble_padding + bubble[0].width(), 41);
+        assert_eq!(art_layout(&bubble, &["界  x"], 80).tail_pos, 11);
+        assert_eq!(
+            art_layout(&bubble, &["　".repeat(15).as_str()], 80).tail_pos,
+            30
+        );
+    }
+
+    #[test]
+    fn speech_tail_stays_centered_for_every_character_style() {
+        for teto in [false, true] {
+            for style in 0..get_character_art(None, Some(true), teto).len() {
+                let art = get_character_art(Some(style as i32), None, teto);
+                for width in [10, 40, 80, 200] {
+                    for text in ["hello", "A longer message with multiple words"] {
+                        let bubble = speech_bubble_lines_with_width(text, width);
+                        let layout = art_layout(&bubble, &art, width);
+                        assert_eq!(
+                            layout.art_padding + layout.tail_pos,
+                            layout.bubble_padding + bubble[0].width() / 2,
+                            "tail off-center: teto={teto}, style={style}, width={width}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn speech_bubble_wraps_to_narrow_terminal_display_width() {
+        for width in [10, 22, 40, 80] {
+            let bubble = speech_bubble_lines_with_width("初音ミク Hello world verylongword", width);
+            assert!(bubble.iter().all(|line| line.width() <= width));
+        }
+    }
 
     #[test]
     fn test_wrap_text_basic() {
@@ -668,6 +1095,7 @@ mod tests {
             text: Some("test".to_string()),
             style: None,
             list: false,
+            teto: false,
             rainbow: false,
             saturation: 100,
             brightness: 50,
@@ -675,6 +1103,7 @@ mod tests {
             gradient: None,
             no_color: false,
             color_debug: false,
+            ..Default::default()
         };
 
         let config = parse_color_args(&args).unwrap();
@@ -693,6 +1122,7 @@ mod tests {
             text: Some("test".to_string()),
             style: None,
             list: false,
+            teto: false,
             rainbow: false,
             saturation: 100,
             brightness: 50,
@@ -700,6 +1130,7 @@ mod tests {
             gradient: None,
             no_color: true,
             color_debug: false,
+            ..Default::default()
         };
 
         let config = parse_color_args(&args).unwrap();
@@ -863,6 +1294,7 @@ mod tests {
             text: Some("test".to_string()),
             style: None,
             list: false,
+            teto: false,
             rainbow: true,
             saturation: 100,
             brightness: 50,
@@ -870,6 +1302,7 @@ mod tests {
             gradient: None,
             no_color: false,
             color_debug: false,
+            ..Default::default()
         };
 
         let error = parse_color_args(&args).unwrap_err();
@@ -891,6 +1324,7 @@ mod tests {
             text: Some("test".to_string()),
             style: None,
             list: false,
+            teto: false,
             rainbow: false,
             saturation: 100,
             brightness: 50,
@@ -898,6 +1332,7 @@ mod tests {
             gradient: None,
             no_color: false,
             color_debug: true,
+            ..Default::default()
         };
         let config = parse_color_args(&args).unwrap();
         assert!(config.debug);

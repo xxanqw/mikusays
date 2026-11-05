@@ -1,7 +1,7 @@
 // mikuart now shipped as module for better code organization
 // all ASCII art were obtained from https://emojicombos.com/miku-ascii-art
 
-use rand::Rng;
+use rand::RngExt;
 
 pub fn get_miku_art(style: Option<i32>, list: Option<bool>) -> Vec<&'static str> {
     let mut rng = rand::rng();

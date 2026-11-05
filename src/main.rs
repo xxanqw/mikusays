@@ -13,6 +13,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 mod color;
 mod config;
+mod configure;
 mod mikuart;
 mod tetoart;
 use color::{Color, ColorMode, detect_color_mode, lerp_color_hsv};
@@ -79,7 +80,7 @@ impl ArtSize {
     }
 }
 
-#[derive(Parser, Default)]
+#[derive(Parser, Default, Clone)]
 #[command(version, about, long_about = None, args_override_self = true)]
 pub struct Args {
     /// Text to display; read piped stdin when omitted
@@ -123,6 +124,9 @@ pub struct Args {
     /// Save effective options as a configuration file and exit
     #[arg(long)]
     pub save_config: Option<PathBuf>,
+    /// Open the interactive configuration editor (arrow keys, preview, save/load)
+    #[arg(long, conflicts_with_all = ["list", "save_config", "color_debug"])]
+    pub configure: bool,
 
     /// Style of the selected character. Otherwise, randomly choose one that fits the terminal
     #[arg(short, long, value_parser = clap::value_parser!(i32).range(0..))]
@@ -773,6 +777,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .exit()
     });
 
+    if args.configure {
+        return configure::run(args);
+    }
     if args.list {
         if args.character == Some(Character::Random) {
             list_all_art_styles(false);

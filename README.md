@@ -51,6 +51,8 @@ Options:
           Ignore the automatic configuration file
       --save-config <SAVE_CONFIG>
           Save effective options as a configuration file and exit
+      --configure
+          Open the interactive configuration editor (arrow keys, preview, save/load)
   -s, --style <STYLE>
           Style of the selected character. Otherwise, randomly choose one that fits the terminal
   -l, --list
@@ -137,6 +139,37 @@ terminal. If the filters leave no fitting artwork, only the message is printed.
 An explicit `--style N` overrides size/exclusion/terminal-fit filters; with
 `--character random`, it chooses style N from one of the two collections.
 `--list` is unfiltered; `--character random --list` lists both collections.
+
+### Interactive configuration editor
+
+```bash
+mikusays --configure                    # Edit the automatic config
+mikusays --configure --config ./my.conf # Open/create another config
+mikusays --configure --no-config        # Start from built-in defaults
+```
+
+The full-screen terminal interface shows the current character, style, size filter,
+bubble, alignment, colors, saturation, brightness, exclusions, custom artwork, and
+save/load path. No message is required. Both stdin and stdout must be terminals.
+
+- **Up/Down** (or Tab): select a setting; the list scrolls on smaller terminals.
+- **Enter/Right/Space**: edit a value or cycle a choice; Enter on Save writes the file.
+- **P**: preview with the current settings; any key returns to the editor.
+- **S**: save to the displayed config path (including replacing an existing file).
+- **L**: reload that file; **R**: reset settings to built-in defaults without saving.
+- **Q/Esc/Ctrl+C**: exit; unsaved edits require a discard confirmation.
+- In an input dialog, **Ctrl+U** clears, **Backspace** deletes, **Enter** applies,
+  and **Esc** cancels. Confirm discard by typing `y` and pressing Enter.
+
+Use `random` in the Style dialog, or leave it empty, to remove an explicit style.
+An empty exclusions field clears the list; an empty custom-art path switches back
+to built-in artwork. Editing Solid color or Gradient activates that color mode;
+Color mode also cycles through auto, solid, gradient, rainbow, and no color.
+Changing the Config file field selects a save-as/load target; it does not load it
+until **L** is pressed. The preview message is never saved as a default message.
+Invalid entries leave the previous value intact. A malformed config opens with
+an error notice and default settings, allowing repair via Save. No file is changed
+until Save is selected. Terminal state is restored on exit.
 
 ### Configuration
 

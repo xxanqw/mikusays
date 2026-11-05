@@ -3,7 +3,7 @@ use clap::{CommandFactory, FromArgMatches};
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-fn default_path() -> Option<PathBuf> {
+pub fn default_path() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("XDG_CONFIG_HOME") {
         return Some(PathBuf::from(path).join("mikusays/config"));
     }
@@ -42,26 +42,27 @@ const OPTIONS: &[&str] = &[
     "--no-color",
 ];
 
-pub fn parse() -> Result<Args, Box<dyn std::error::Error>> {
-    let cli: Vec<OsString> = std::env::args_os().collect();
-    // Validate the CLI independently, including conflicts and help/version exits.
-    let matches = Args::command().get_matches_from(&cli);
-    let initial = Args::from_arg_matches(&matches)?;
-    if initial.no_config {
-        return Ok(initial);
-    }
-    let explicit = initial.config.is_some();
-    let Some(path) = initial.config.clone().or_else(default_path) else {
-        return Ok(initial);
-    };
-    let contents = match std::fs::read_to_string(&path) {
-        Ok(contents) => contents,
-        Err(error) if !explicit && error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(initial);
-        }
-        Err(error) => return Err(format!("cannot read config {}: {error}", path.display()).into()),
-    };
-    let mut defaults = Vec::new();
+pub fn load(path: &std::path::Path) -> Result<Args, Box<dyn std::error::Error>> {
+    let contents = std::fs::read_to_string(path)?;
+    let options = config_options(&contents, path)?;
+    Ok(Args::from_arg_matches(
+        &Args::command().try_get_matches_from(
+            std::iter::once(OsString::from("mikusays")).chain(
+                options.into_iter().flat_map(|(option, value)| {
+                    std::iter::once(OsString::from(option)).chain(value)
+                }),
+            ),
+        )?,
+    )?)
+}
+
+type ConfigOptions = Vec<(String, Option<OsString>)>;
+
+fn config_options(
+    contents: &str,
+    path: &std::path::Path,
+) -> Result<ConfigOptions, Box<dyn std::error::Error>> {
+    let mut options = Vec::new();
     for (index, line) in contents.lines().enumerate() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -78,6 +79,43 @@ pub fn parse() -> Result<Args, Box<dyn std::error::Error>> {
             )
             .into());
         }
+        let value = value.map(|value| {
+            if option == "--art" {
+                path.parent()
+                    .unwrap_or(std::path::Path::new("."))
+                    .join(value)
+                    .into_os_string()
+            } else {
+                OsString::from(value)
+            }
+        });
+        options.push((option.to_string(), value));
+    }
+    Ok(options)
+}
+
+pub fn parse() -> Result<Args, Box<dyn std::error::Error>> {
+    let cli: Vec<OsString> = std::env::args_os().collect();
+    // Validate the CLI independently, including conflicts and help/version exits.
+    let matches = Args::command().get_matches_from(&cli);
+    let initial = Args::from_arg_matches(&matches)?;
+    if initial.no_config || initial.configure {
+        return Ok(initial);
+    }
+    let explicit = initial.config.is_some();
+    let Some(path) = initial.config.clone().or_else(default_path) else {
+        return Ok(initial);
+    };
+    let contents = match std::fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(error) if !explicit && error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(initial);
+        }
+        Err(error) => return Err(format!("cannot read config {}: {error}", path.display()).into()),
+    };
+    let mut defaults = Vec::new();
+    for (option, value) in config_options(&contents, &path)? {
+        let option = option.as_str();
         let id = option.trim_start_matches('-').replace('-', "_");
         let overridden = matches.ids().any(|cli_id| {
             matches.value_source(cli_id.as_str()) == Some(clap::parser::ValueSource::CommandLine)
@@ -96,17 +134,7 @@ pub fn parse() -> Result<Args, Box<dyn std::error::Error>> {
         }
         defaults.push(OsString::from(option));
         if let Some(value) = value {
-            if option == "--art" {
-                let art = PathBuf::from(value);
-                defaults.push(
-                    path.parent()
-                        .unwrap_or(std::path::Path::new("."))
-                        .join(art)
-                        .into_os_string(),
-                );
-            } else {
-                defaults.push(OsString::from(value));
-            }
+            defaults.push(value);
         }
     }
     let merged = std::iter::once(cli[0].clone())

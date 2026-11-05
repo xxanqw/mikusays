@@ -538,3 +538,26 @@ fn missing_explicit_files_report_errors() {
         assert!(stderr.contains("missing"), "{stderr}");
     }
 }
+
+#[test]
+fn configuration_editor_requires_a_tty_without_creating_files() {
+    let fixture = Fixture::new();
+    let path = fixture.0.join("new.conf");
+    let output = command()
+        .args(["--configure", "--config"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("requires an interactive terminal"));
+    assert!(!path.exists());
+    // Malformed files must reach the editor's recoverable loading flow, not Clap::exit.
+    std::fs::write(&path, "--bad-option\n").unwrap();
+    let output = command()
+        .args(["--configure", "--config"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&output.stderr).contains("requires an interactive terminal"));
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "--bad-option\n");
+}

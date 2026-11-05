@@ -427,6 +427,9 @@ fn art_layout(bubble: &[String], art: &[&str], terminal_width: usize) -> ArtLayo
         let whitespace = line.trim_start_matches(char::is_whitespace);
         line[..line.len() - whitespace.len()].width()
     });
+    // If the artwork starts near the left edge, move the tail right rather than
+    // clamping only the bubble's left edge and detaching its tail from the center.
+    let tail_pos = tail_pos.max(bubble_width / 2);
     let tail_width = bubble
         .iter()
         .rev()
@@ -704,8 +707,31 @@ mod tests {
         assert_eq!(layout.height, bubble.len() + 2);
         assert_eq!(layout.art_padding, 0);
         assert_eq!(layout.bubble_padding + bubble[0].width(), 41);
-        assert_eq!(art_layout(&bubble, &["界  x"], 80).tail_pos, 0);
-        assert_eq!(art_layout(&bubble, &["　x"], 80).tail_pos, 2);
+        assert_eq!(art_layout(&bubble, &["界  x"], 80).tail_pos, 11);
+        assert_eq!(
+            art_layout(&bubble, &["　".repeat(15).as_str()], 80).tail_pos,
+            30
+        );
+    }
+
+    #[test]
+    fn speech_tail_stays_centered_for_every_character_style() {
+        for teto in [false, true] {
+            for style in 0..get_character_art(None, Some(true), teto).len() {
+                let art = get_character_art(Some(style as i32), None, teto);
+                for width in [10, 40, 80, 200] {
+                    for text in ["hello", "A longer message with multiple words"] {
+                        let bubble = speech_bubble_lines_with_width(text, width);
+                        let layout = art_layout(&bubble, &art, width);
+                        assert_eq!(
+                            layout.art_padding + layout.tail_pos,
+                            layout.bubble_padding + bubble[0].width() / 2,
+                            "tail off-center: teto={teto}, style={style}, width={width}"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]

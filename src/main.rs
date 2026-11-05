@@ -11,8 +11,10 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 mod color;
 mod mikuart;
+mod tetoart;
 use color::{Color, ColorMode, detect_color_mode, lerp_color_hsv};
 use mikuart::get_miku_art;
+use tetoart::get_teto_art;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -20,7 +22,11 @@ pub struct Args {
     /// Text to display in the speech bubble
     pub text: Option<String>,
 
-    /// Style of the Miku art. A random one is chosen if not specified
+    /// Use the separate Kasane Teto art collection instead of Miku
+    #[arg(long)]
+    pub teto: bool,
+
+    /// Style of the selected character. A random one is chosen if not specified
     #[arg(short, long, value_parser = clap::value_parser!(i32).range(0..))]
     pub style: Option<i32>,
 
@@ -353,18 +359,27 @@ pub fn generate_gradient_cache(
     }
 }
 
-fn list_all_art_styles() {
-    println!("Available Miku art styles:");
+fn get_character_art(style: Option<i32>, list: Option<bool>, teto: bool) -> Vec<&'static str> {
+    if teto {
+        get_teto_art(style, list)
+    } else {
+        get_miku_art(style, list)
+    }
+}
+
+fn list_all_art_styles(teto: bool) {
+    let character = if teto { "Teto" } else { "Miku" };
+    println!("Available {character} art styles:");
     println!("==========================");
 
     // Get all art styles to determine the count
-    let all_art = get_miku_art(None, Some(true));
+    let all_art = get_character_art(None, Some(true), teto);
     let styles_count = all_art.len();
     println!("Total styles: {}", styles_count);
 
     for i in 0..styles_count {
         println!("\n--- Style {} ---", i);
-        let art = get_miku_art(Some(i as i32), Some(false));
+        let art = get_character_art(Some(i as i32), Some(false), teto);
         for line in art {
             println!("{}", line);
         }
@@ -389,16 +404,17 @@ fn list_all_art_styles() {
     println!("  --gradient red:blue      Custom gradient");
 }
 
-fn draw_miku_says(
+fn draw_character_says(
     text: &str,
     style: i32,
+    teto: bool,
     color_config: &mut ColorConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let speech_bubble_lines = get_speech_bubble_lines(text);
-    let miku_art = get_miku_art(Some(style), None);
+    let character_art = get_character_art(Some(style), None, teto);
 
     // Distribute colors across characters that are actually colored.
-    let total_chars: usize = miku_art
+    let total_chars: usize = character_art
         .iter()
         .map(|line| {
             line.chars()
@@ -419,7 +435,7 @@ fn draw_miku_says(
 
     let mut all_content_lines = Vec::new();
     all_content_lines.extend(speech_bubble_lines.clone());
-    all_content_lines.extend(miku_art.iter().map(|s| s.to_string()));
+    all_content_lines.extend(character_art.iter().map(|s| s.to_string()));
 
     let max_content_width = all_content_lines
         .iter()
@@ -438,16 +454,16 @@ fn draw_miku_says(
         .map(|line| line.width())
         .unwrap_or(0);
 
-    let first_miku_line = miku_art.first().unwrap_or(&"");
-    let tail_pos = first_miku_line
+    let first_art_line = character_art.first().unwrap_or(&"");
+    let tail_pos = first_art_line
         .chars()
         .position(|c| !c.is_whitespace())
         .unwrap_or(0);
 
     let bubble_center = bubble_width / 2;
-    let miku_tail_absolute_pos = overall_left_padding + tail_pos;
+    let art_tail_absolute_pos = overall_left_padding + tail_pos;
 
-    let bubble_left_padding = miku_tail_absolute_pos.saturating_sub(bubble_center);
+    let bubble_left_padding = art_tail_absolute_pos.saturating_sub(bubble_center);
 
     let bubble_line_count = speech_bubble_lines.len();
 
@@ -484,7 +500,7 @@ fn draw_miku_says(
         } else {
             let horizontal_padding = " ".repeat(overall_left_padding);
 
-            // Apply coloring to Miku art lines
+            // Apply coloring to character art lines
             if color_config.mode != ColorMode::NoColor && !color_config.color_cache.is_empty() {
                 // Use crossterm queueing to color characters so it's platform-agnostic
                 let mut stdout = stdout();
@@ -536,7 +552,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     if args.list {
-        list_all_art_styles();
+        list_all_art_styles(args.teto);
         return Ok(());
     }
 
@@ -545,7 +561,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(1);
     });
 
-    let styles_count = get_miku_art(None, Some(true)).len();
+    let styles_count = get_character_art(None, Some(true), args.teto).len();
     let style = match args.style {
         Some(style) if style as usize >= styles_count => Args::command()
             .error(
@@ -580,7 +596,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    draw_miku_says(&text, style, &mut color_config)?;
+    draw_character_says(&text, style, args.teto, &mut color_config)?;
 
     Ok(())
 }
@@ -668,6 +684,7 @@ mod tests {
             text: Some("test".to_string()),
             style: None,
             list: false,
+            teto: false,
             rainbow: false,
             saturation: 100,
             brightness: 50,
@@ -693,6 +710,7 @@ mod tests {
             text: Some("test".to_string()),
             style: None,
             list: false,
+            teto: false,
             rainbow: false,
             saturation: 100,
             brightness: 50,
@@ -863,6 +881,7 @@ mod tests {
             text: Some("test".to_string()),
             style: None,
             list: false,
+            teto: false,
             rainbow: true,
             saturation: 100,
             brightness: 50,
@@ -891,6 +910,7 @@ mod tests {
             text: Some("test".to_string()),
             style: None,
             list: false,
+            teto: false,
             rainbow: false,
             saturation: 100,
             brightness: 50,

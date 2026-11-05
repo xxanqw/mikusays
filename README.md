@@ -5,7 +5,7 @@
 
 # MikuSays 🎤
 
-A `cowsay` clone with Hatsune Miku ASCII art and speech bubbles.  
+A `cowsay` clone with Hatsune Miku ASCII art and speech bubbles, plus an optional Kasane Teto collection.
 
 **NOW WITH**  
 <img height=24 src="https://cdn.xserv.pp.ua/files/css/COLORS.svg" alt="COLORS">
@@ -25,8 +25,9 @@ Arguments:
   [TEXT]  Text to display in the speech bubble
 
 Options:
-  -s, --style <STYLE>            Style of the Miku art. A random one is chosen if not specified
+  -s, --style <STYLE>            Style of the selected character. A random one is chosen if not specified
   -l, --list                     List all available art styles with their indices
+      --teto                     Use the separate Kasane Teto art collection instead of Miku
       --rainbow                  Apply a smooth rainbow gradient across the ASCII art
       --saturation <SATURATION>  Saturation level for rainbow gradient (0-100) [default: 100]
       --brightness <BRIGHTNESS>  Brightness level for rainbow gradient (0-100) [default: 50]
@@ -35,6 +36,19 @@ Options:
       --no-color                 Disable all coloring (respects NO_COLOR environment variable)
   -h, --help                     Print help
   -V, --version                  Print version
+```
+
+### Kasane Teto
+
+Teto has a separate collection and style indices; Miku remains the default.
+The initial two Teto artworks are the examples supplied in [issue #25](https://github.com/xxanqw/mikusays/issues/25), originally from [Emoji Combos](https://emojicombos.com/teto-ascii-art).
+
+```bash
+mikusays --teto "Hello from Teto!"          # Random Teto style
+mikusays --teto --list                     # List only Teto styles (0–1)
+mikusays --teto --style 0 "Hello!"         # Select a Teto style
+mikusays --teto --style 1 --color red "Hi!" # Color options also work for Teto
+mikusays --list                            # Miku styles, unchanged
 ```
 
 ## Installation

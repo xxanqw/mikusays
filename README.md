@@ -41,11 +41,11 @@ Options:
 ### Kasane Teto
 
 Teto has a separate collection and style indices; Miku remains the default.
-The initial two Teto artworks are the examples supplied in [issue #25](https://github.com/xxanqw/mikusays/issues/25), originally from [Emoji Combos](https://emojicombos.com/teto-ascii-art).
+The collection contains 20 Teto artworks, matching Miku’s 20 styles. Styles 0–1 are the examples supplied in [issue #25](https://github.com/xxanqw/mikusays/issues/25); styles 2–19 are additional reviewed selections from [Emoji Combos](https://emojicombos.com/teto-ascii-art). See [art sources](src/teto/SOURCES.md) for the preview-to-style mapping.
 
 ```bash
 mikusays --teto "Hello from Teto!"          # Random Teto style
-mikusays --teto --list                     # List only Teto styles (0–1)
+mikusays --teto --list                     # List only Teto styles (0–19)
 mikusays --teto --style 0 "Hello!"         # Select a Teto style
 mikusays --teto --style 1 --color red "Hi!" # Color options also work for Teto
 mikusays --list                            # Miku styles, unchanged

@@ -6,15 +6,23 @@ fn command() -> Command {
 }
 
 #[test]
-fn test_cli_teto_list_contains_only_the_issue_artworks() {
+fn test_cli_teto_list_contains_all_twenty_approved_artworks() {
     let output = command().args(["--teto", "--list"]).output().unwrap();
     assert!(output.status.success());
     let stdout = str::from_utf8(&output.stdout).unwrap();
     assert!(stdout.contains("Available Teto art styles:"));
-    assert!(stdout.contains("Total styles: 2"));
-    assert_eq!(stdout.matches("--- Style").count(), 2);
+    assert!(stdout.contains("Total styles: 20"));
+    assert_eq!(stdout.matches("--- Style").count(), 20);
     assert!(stdout.contains(include_str!("../src/teto/small.txt").trim_end_matches('\n')));
     assert!(stdout.contains(include_str!("../src/teto/large.txt").trim_end_matches('\n')));
+    for index in 2..20 {
+        let path = format!(
+            "{}/src/teto/style-{index:02}.txt",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let artwork = std::fs::read_to_string(path).unwrap();
+        assert!(stdout.contains(artwork.trim_end_matches('\n')));
+    }
     assert!(!stdout.contains("Available Miku art styles:"));
 }
 
@@ -33,18 +41,18 @@ fn test_cli_default_list_does_not_mix_in_teto() {
 }
 
 #[test]
-fn test_cli_teto_style_indices_are_separate_from_miku() {
+fn test_cli_teto_style_bounds_match_the_expanded_collection() {
     let output = command()
-        .args(["test", "--teto", "--style", "2"])
+        .args(["test", "--teto", "--style", "20"])
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     let stderr = str::from_utf8(&output.stderr).unwrap();
-    assert!(stderr.contains("style 2 does not exist; choose a value between 0 and 1"));
+    assert!(stderr.contains("style 20 does not exist; choose a value between 0 and 19"));
     assert!(!stderr.contains("panicked"));
 
     let output = command()
-        .args(["test", "--style", "2", "--color-debug"])
+        .args(["test", "--teto", "--style", "19", "--no-color"])
         .output()
         .unwrap();
     assert!(output.status.success());

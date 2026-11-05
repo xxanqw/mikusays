@@ -475,7 +475,8 @@ fn draw_character_says(
     teto: bool,
     color_config: &mut ColorConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let terminal = size()?;
+    // Pipes and CI may not have a terminal to query.
+    let terminal = size().unwrap_or((80, 24));
     let available_width = terminal.0 as usize;
     let available_height = terminal.1 as usize;
     let speech_bubble_lines = if style >= 0 {

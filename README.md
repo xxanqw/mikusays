@@ -44,7 +44,8 @@ Without `--style`, mikusays randomly chooses only artwork that fits the terminal
 width and height together with the speech bubble. The bubble wraps to the available
 width. If no artwork fits, only the wrapped message is printed. An explicit
 `--style <number>` always displays that artwork, even if it exceeds the terminal size.
-`--list` still shows every style.
+`--list` still shows every style. If terminal size detection is unavailable (for
+example, in a pipe or CI), selection uses 80 columns by 24 rows.
 
 ### Kasane Teto
 
